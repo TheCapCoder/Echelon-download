@@ -1,0 +1,1775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Echelon OS</title>
+<!-- Electron window controls injected at top level -->
+<style>
+#win-controls{
+  position:fixed;top:4px;right:6px;z-index:10000;
+  display:flex;align-items:center;gap:0;
+  -webkit-app-region:no-drag;
+}
+#win-controls button{
+  width:42px;height:28px;border:none;background:transparent;
+  font-size:13px;cursor:pointer;color:#506070;
+  transition:background .15s,color .15s;font-family:system-ui,sans-serif;
+  -webkit-app-region:no-drag;
+}
+#win-controls button:hover{background:rgba(255,255,255,.08);color:#c8dae8}
+#win-controls #win-close:hover{background:#cc3333;color:#fff}
+/* Make topbar draggable so user can move the window */
+.topbar{-webkit-app-region:drag}
+.topbar a,.topbar button,.topbar span,.margin-top{height:36px;-webkit-app-region:no-drag}
+#win-drag{
+  position:fixed;top:0;left:0;right:86px;height:36px;
+  -webkit-app-region:drag;z-index:9999;pointer-events:all;
+}
+</style>
+</head>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#02040a;font-family:'Orbitron',monospace;overflow:hidden;display:flex;align-items:center;justify-content:center}
+
+:root{
+  --accent:#00c8ff;--accent2:#00e5ff;
+  --accent-glow:rgba(0,200,255,0.2);
+  --amber:#e8a020;--amber-glow:rgba(232,160,32,0.2);
+  --border:#1a2e40;--border2:#254560;
+  --text:#d0e4f0;--text2:#7090b0;--text3:#405870;
+  --steel:#0a0f18;--steel2:#0d1520;--steel3:#111e2e;
+  --vault-light:#c8d8e8;--vault-mid:#8090a0;--vault-dark:#303848;
+  --vault-shine:#e8f0f8;--vault-shadow:#181e28;
+}
+
+#app{width:1024px;height:768px;position:relative;overflow:hidden;flex-shrink:0;background:#0a0f18}
+
+/* ═══════════════════════════
+   PAGES SYSTEM
+═══════════════════════════ */
+.page{position:absolute;inset:0;display:none;flex-direction:column;opacity:0;transition:opacity .35s}
+.page.active{display:flex;opacity:1}
+
+/* ═══════════════════════════
+   HOLOGRAPHIC BG
+═══════════════════════════ */
+.holo-bg{
+  width:100%;height:100%;
+  background:#0a0f18;
+  background-image:
+    repeating-linear-gradient(0deg,transparent,transparent 39px,rgba(0,200,255,0.035) 39px,rgba(0,200,255,0.035) 40px),
+    repeating-linear-gradient(90deg,transparent,transparent 39px,rgba(0,200,255,0.025) 39px,rgba(0,200,255,0.025) 40px);
+  display:flex;flex-direction:column;position:relative;overflow:hidden;
+}
+.holo-bg::before{content:'';position:absolute;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(ellipse 70% 35% at 50% 0%,rgba(0,200,255,0.07) 0%,transparent 65%),
+             radial-gradient(ellipse 50% 25% at 50% 100%,rgba(232,160,32,0.04) 0%,transparent 60%)}
+.corner{position:absolute;width:20px;height:20px;border-color:var(--accent);border-style:solid;z-index:5;opacity:.7}
+.corner-tl{top:7px;left:7px;border-width:2px 0 0 2px}
+.corner-tr{top:7px;right:7px;border-width:2px 2px 0 0}
+.corner-bl{bottom:7px;left:7px;border-width:0 0 2px 2px}
+.corner-br{bottom:7px;right:7px;border-width:0 2px 2px 0}
+.scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,rgba(0,200,255,.22),transparent);animation:scan 5s linear infinite;pointer-events:none;z-index:2}
+@keyframes scan{0%{top:-2px;opacity:.6}100%{top:100%;opacity:0}}
+
+/* ═══════════════════════════
+   TOPBAR
+═══════════════════════════ */
+.topbar{display:flex;align-items:center;padding:9px 18px;border-bottom:1px solid var(--border2);background:rgba(8,14,22,.97);position:relative;z-index:3;gap:10px;flex-shrink:0}
+.topbar::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(0,200,255,.2),transparent)}
+.topbar-title{font-size:10px;font-weight:700;letter-spacing:.2em;color:var(--accent);text-transform:uppercase;flex:1;display:flex;align-items:center;gap:8px}
+.topbar-links{display:flex;gap:14px;align-items:center}
+.topbar-links a{font-size:10px;letter-spacing:.1em;color:var(--text2);cursor:pointer;text-decoration:none;text-transform:uppercase;transition:color .2s,text-shadow .2s}
+.topbar-links a:hover{color:var(--accent);text-shadow:0 0 8px var(--accent)}
+.back-btn{display:inline-flex;align-items:center;gap:5px;font-size:10px;letter-spacing:.1em;color:var(--text2);cursor:pointer;text-transform:uppercase;padding:4px 10px;border:1px solid var(--border2);border-radius:2px;background:rgba(15,28,42,.6);transition:all .2s}
+.back-btn:hover{color:var(--accent);border-color:var(--accent);text-shadow:0 0 6px var(--accent)}
+
+/* ═══════════════════════════
+   BUTTONS
+═══════════════════════════ */
+.mech-btn{display:inline-flex;align-items:center;gap:6px;font-family:'Orbitron',monospace;font-size:9px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--text2);background:rgba(16,30,46,.8);border:1px solid var(--border2);border-radius:2px;padding:6px 11px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+.mech-btn::after{content:'';position:absolute;inset:0;background:var(--accent-glow);opacity:0;transition:opacity .2s;pointer-events:none}
+.mech-btn:hover{color:var(--accent);border-color:var(--accent);text-shadow:0 0 6px var(--accent)}
+.mech-btn:hover::after{opacity:1}
+.mech-btn.amber:hover{color:var(--amber);border-color:var(--amber);text-shadow:0 0 6px var(--amber)}
+.mech-btn.amber:hover::after{background:var(--amber-glow);opacity:1}
+
+/* ═══════════════════════════
+   SIDEBAR
+═══════════════════════════ */
+.sidebar{width:148px;border-left:1px solid var(--border2);padding:14px 9px;display:flex;flex-direction:column;gap:8px;background:rgba(6,11,18,.9);flex-shrink:0}
+.sb-item{padding:8px 9px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;text-align:center;border:1px solid var(--border);color:var(--text2);background:rgba(12,20,32,.8);border-radius:2px;transition:all .2s;position:relative;overflow:hidden}
+.sb-item::after{content:'';position:absolute;inset:0;opacity:0;transition:opacity .2s;background:var(--accent-glow);pointer-events:none}
+.sb-item:hover{color:var(--accent);border-color:var(--accent);text-shadow:0 0 6px var(--accent)}
+.sb-item:hover::after{opacity:1}
+.sb-item.active{color:var(--accent);border-color:var(--accent);background:rgba(0,160,200,.07)}
+.sb-item.active::after{opacity:1}
+.sb-item.top-item{color:var(--amber);border-color:var(--amber);background:rgba(232,160,32,.07)}
+.sb-item.top-item::after{background:var(--amber-glow);opacity:1}
+.sb-item.top-item:hover{color:#ffc040;border-color:#ffc040}
+
+/* ═══════════════════════════
+   SECTION LABEL
+═══════════════════════════ */
+.sec-label{font-size:8px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.sec-label::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--border2),transparent)}
+
+/* ═══════════════════════════
+   QUOTE BAR
+═══════════════════════════ */
+.quote-bar{background:rgba(10,18,28,.9);border:1px solid var(--border2);border-radius:2px;padding:10px 14px;display:flex;align-items:center;gap:10px;border-left:3px solid var(--accent);flex-shrink:0}
+.quote-text{font-size:13px;color:var(--text);font-style:italic;flex:1;letter-spacing:.03em;line-height:1.75}
+.quote-tag{font-size:9px;padding:2px 7px;border:1px solid var(--border2);color:var(--text2);white-space:nowrap;letter-spacing:.1em;flex-shrink:0}
+
+/* ═══════════════════════════
+   GAME ROWS
+═══════════════════════════ */
+.game-row{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border:1px solid var(--border);border-radius:2px;font-size:11px;background:rgba(12,20,32,.7);border-left:2px solid var(--border);transition:all .2s}
+.game-row:hover{border-left-color:var(--accent);background:rgba(0,200,255,.04)}
+.game-label{color:var(--text2);letter-spacing:.06em}
+.game-score{font-weight:700;letter-spacing:.08em;color:var(--text)}
+.win{color:#22dd88}.loss{color:#e84040}.draw{color:var(--amber)}
+
+/* ═══════════════════════════
+   INPUTS
+═══════════════════════════ */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.field-label{font-size:8px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--text2);margin-bottom:6px}
+.mech-input{border:1px solid var(--border2);border-radius:2px;padding:9px 11px;font-size:12px;color:var(--text);background:rgba(7,13,22,.8);min-height:50px;outline:none;font-family:'Orbitron',monospace;letter-spacing:.04em;line-height:1.7;transition:border-color .2s;width:100%;resize:none}
+.mech-input:focus{border-color:var(--accent)}
+
+/* ═══════════════════════════
+   DROPDOWN
+═══════════════════════════ */
+.dropdown{position:relative;display:inline-block}
+.dropdown-menu{position:absolute;bottom:calc(100% + 4px);right:0;background:#080e18;border:1px solid var(--border2);border-radius:2px;z-index:200;min-width:190px;overflow:hidden}
+.dropdown-menu button{display:block;width:100%;text-align:left;padding:8px 14px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text2);background:none;border:none;border-bottom:1px solid var(--border);cursor:pointer;font-family:'Orbitron',monospace;transition:all .2s}
+.dropdown-menu button:last-child{border-bottom:none}
+.dropdown-menu button:hover{color:var(--accent);background:rgba(0,200,255,.05);text-shadow:0 0 5px var(--accent)}
+.dropdown-menu button.selected{color:var(--accent);font-weight:700}
+
+.perf-block{display:flex;gap:10px;align-items:flex-start}
+.perf-list{flex:1;display:flex;flex-direction:column;gap:5px}
+.perf-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;gap:8px}
+.perf-header-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.game-badge{font-size:8px;padding:2px 8px;border:1px solid var(--accent);color:var(--accent);letter-spacing:.08em;background:rgba(0,200,255,.06)}
+
+/* ═══════════════════════════
+   META TIPS
+═══════════════════════════ */
+#meta-tips-wrap{margin-top:4px;overflow:visible}
+.meta-tips-box{background:rgba(0,30,50,.5);border:1px solid rgba(0,200,255,.25);border-radius:2px;padding:12px 14px;border-left:3px solid var(--accent);opacity:0;transform:translateY(8px);transition:opacity .5s,transform .5s}
+.meta-tips-box.visible{opacity:1;transform:translateY(0)}
+.meta-header{font-size:8px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.meta-header::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(0,200,255,.35),transparent)}
+.meta-tip{display:flex;align-items:flex-start;gap:10px;font-size:13px;color:var(--text);letter-spacing:.03em;line-height:1.75;margin-bottom:10px;opacity:0;transform:translateX(-8px);transition:opacity .4s,transform .4s}
+.meta-tip:last-child{margin-bottom:0}
+.meta-tip.show{opacity:1;transform:translateX(0)}
+.meta-tip::before{content:'▸';color:var(--accent);font-size:10px;flex-shrink:0;margin-top:1px}
+
+/* ═══════════════════════════
+   HOLO REVEAL
+═══════════════════════════ */
+.holo-section{opacity:0;transform:translateY(8px);transition:opacity .4s ease,transform .4s ease}
+.holo-section.revealed{opacity:1;transform:translateY(0)}
+#holo-scan{position:absolute;left:0;right:0;height:3px;top:0;background:linear-gradient(90deg,transparent,rgba(0,200,255,.85),rgba(0,230,255,1),rgba(0,200,255,.85),transparent);box-shadow:0 0 14px 5px rgba(0,200,255,.4);z-index:10;display:none;pointer-events:none}
+
+/* ═══════════════════════════
+   MAIN SCROLLABLE AREA
+═══════════════════════════ */
+.main{flex:1;padding:16px 22px;display:flex;flex-direction:column;gap:16px;overflow-y:auto;min-width:0}
+.main::-webkit-scrollbar{width:4px}
+.main::-webkit-scrollbar-track{background:rgba(0,0,0,.2)}
+.main::-webkit-scrollbar-thumb{background:var(--border2)}
+
+/* ═══════════════════════════
+   HERO HEADER
+═══════════════════════════ */
+.hero-headline{padding:14px 0 4px}
+.hero-headline h1{font-size:15px;font-weight:700;letter-spacing:.12em;color:var(--text);text-transform:uppercase;line-height:1.4}
+.hero-headline h1 span{color:var(--accent);text-shadow:0 0 14px rgba(0,200,255,.45)}
+.hero-headline p{font-size:9px;color:var(--text2);letter-spacing:.2em;text-transform:uppercase;margin-top:5px}
+
+/* ═══════════════════════════
+   INNER PAGE LAYOUT — no scroll, fits 768px
+═══════════════════════════ */
+.ip-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:14px 24px 0;gap:0}
+.ip-header-block{flex-shrink:0}
+.ip-page-name{font-size:15px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--text);margin-bottom:6px}
+.ip-page-name span{color:var(--accent)}
+.ip-divider{height:1px;background:linear-gradient(90deg,var(--accent),rgba(0,200,255,.15),transparent);margin-bottom:10px;opacity:.5}
+.ip-intro{font-size:11.5px;color:var(--text2);line-height:1.7;letter-spacing:.03em;margin-bottom:10px;max-width:820px}
+.ip-facts{display:flex;flex-direction:column;gap:6px;margin-bottom:0}
+.ip-fact{display:flex;align-items:flex-start;gap:10px;padding:7px 12px;background:rgba(0,200,255,.03);border:1px solid var(--border);border-left:2px solid rgba(0,200,255,.3);border-radius:2px;font-size:11px;color:var(--text2);line-height:1.6;letter-spacing:.02em}
+.ip-fact strong{color:var(--text);font-weight:700}
+.ip-fact-icon{color:var(--accent);font-size:13px;flex-shrink:0;margin-top:1px;opacity:.8}
+/* Workspace — fills remaining height, NO scroll */
+.ip-workspace{flex:1;margin:12px -24px 0;border-top:1px solid var(--border2);background:rgba(0,0,0,.18);display:flex;flex-direction:column;overflow:hidden;padding:14px 24px 14px}
+.ws-section{margin-bottom:12px;flex-shrink:0}
+.ws-section:last-child{margin-bottom:0}
+.ws-section-title{font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin-bottom:7px;display:flex;align-items:center;gap:8px}
+.ws-section-title::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(0,200,255,.2),transparent)}
+.ws-body{font-size:12px;color:var(--text2);line-height:1.8;letter-spacing:.02em}
+.ws-body p{margin-bottom:7px}
+.ws-body p:last-child{margin-bottom:0}
+.ws-body strong{color:var(--text);font-weight:600}
+.ws-highlight{display:flex;gap:10px;background:rgba(0,200,255,.04);border:1px solid var(--border);border-left:2px solid rgba(0,200,255,.4);border-radius:2px;padding:9px 12px;margin-top:8px;flex-shrink:0}
+.ws-highlight-icon{color:var(--accent);font-size:13px;flex-shrink:0;margin-top:1px}
+.ws-highlight-text{font-size:12px;color:var(--text2);line-height:1.7;letter-spacing:.02em}
+.ws-highlight-text strong{color:var(--text)}
+
+/* ═══════════════════════════
+   VAULT DOOR OPENING
+═══════════════════════════ */
+.gate-wrap{position:absolute;inset:0;z-index:100;display:flex;overflow:hidden}
+.gate-door{width:50%;height:100%;position:relative;overflow:hidden;transition:transform 1.8s cubic-bezier(.55,0,.15,1);will-change:transform}
+.gate-door-left{transform-origin:left center}
+.gate-door-right{transform-origin:right center}
+.gate-door-left.open{transform:translateX(-100%)}
+.gate-door-right.open{transform:translateX(100%)}
+
+/* Vault steel base */
+.vault-face{position:absolute;inset:0;
+  background:linear-gradient(120deg,#1c2028 0%,#2e3440 18%,#3e4858 30%,#4a5668 42%,#38424e 55%,#2a3040 70%,#1e2430 85%,#141820 100%)}
+/* Metal brushed overlay */
+.vault-brush{position:absolute;inset:0;
+  background:repeating-linear-gradient(175deg,transparent,transparent 3px,rgba(255,255,255,.012) 3px,rgba(255,255,255,.012) 4px);
+  opacity:.8}
+/* Concentric ring grooves */
+.vault-ring{position:absolute;border-radius:50%;border:1px solid rgba(255,255,255,.06)}
+/* Bolt/rivet heads */
+.vault-bolt{position:absolute;width:14px;height:14px;border-radius:50%;
+  background:radial-gradient(circle at 32% 28%,#9ab0c8,#3a4858 60%,#1e2830);
+  border:1px solid #50607a;
+  box-shadow:0 1px 4px rgba(0,0,0,.7),inset 0 1px 1px rgba(255,255,255,.15)}
+/* Central wheel hub */
+.vault-hub{position:absolute;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#b0c8e0,#4a6080 40%,#2a3848 70%,#141c28);
+  border:2px solid #607888;
+  box-shadow:0 2px 12px rgba(0,0,0,.8),inset 0 2px 4px rgba(255,255,255,.2)}
+/* Spoke lines */
+.vault-spoke{position:absolute;background:linear-gradient(90deg,rgba(255,255,255,.0),rgba(160,200,230,.25),rgba(255,255,255,.0));height:3px;transform-origin:left center}
+/* Edge seam (goes WITH door) */
+.vault-seam-strip{position:absolute;top:0;bottom:0;width:6px;
+  background:linear-gradient(180deg,rgba(255,220,60,.0) 0%,rgba(255,200,40,.7) 20%,rgba(255,180,20,.9) 50%,rgba(255,200,40,.7) 80%,rgba(255,220,60,.0) 100%);
+  box-shadow:0 0 12px 3px rgba(255,180,0,.5);
+  animation:seam-pulse 1.6s ease-in-out infinite alternate}
+@keyframes seam-pulse{from{opacity:.5}to{opacity:1}}
+.vault-seam-strip.left-door{right:0}
+.vault-seam-strip.right-door{left:0}
+/* Horizontal band lines */
+.v-hline{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent 5%,rgba(100,130,160,.2) 50%,transparent 95%)}
+/* Vertical structural column */
+.v-vcol{position:absolute;top:0;bottom:0;width:22px;background:linear-gradient(90deg,rgba(0,0,0,.2),rgba(255,255,255,.04),rgba(0,0,0,.2))}
+
+/* ═══════════════════════════
+   PARTICLES + BOOT
+═══════════════════════════ */
+#particles-canvas{position:absolute;inset:0;z-index:103;pointer-events:none}
+
+.boot-screen{position:absolute;inset:0;z-index:102;background:radial-gradient(ellipse at 50% 50%,#0e1520 0%,#04080e 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;transition:opacity .6s}
+.boot-emblem{width:120px;height:120px;border-radius:50%;border:2px solid #607888;display:flex;align-items:center;justify-content:center;position:relative;animation:b-pulse 1.2s ease-in-out infinite alternate;
+  background:radial-gradient(circle at 40% 35%,#2a3848,#0e1824)}
+@keyframes b-pulse{from{box-shadow:0 0 8px rgba(90,130,170,.3),inset 0 0 8px rgba(90,130,170,.05)}to{box-shadow:0 0 28px rgba(90,150,200,.55),inset 0 0 18px rgba(90,150,200,.1)}}
+.boot-inner{width:74px;height:74px;border-radius:50%;border:1px solid rgba(140,180,210,.3);display:flex;align-items:center;justify-content:center;background:rgba(90,130,170,.05);font-size:28px;color:#8ab0d0;opacity:.9}
+.e-dot{position:absolute;width:10px;height:10px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#90aac0,#1e2c3c);border:1px solid #607888}
+.e-dot:nth-child(1){top:-5px;left:50%;transform:translateX(-50%)}
+.e-dot:nth-child(2){bottom:-5px;left:50%;transform:translateX(-50%)}
+.e-dot:nth-child(3){left:-5px;top:50%;transform:translateY(-50%)}
+.e-dot:nth-child(4){right:-5px;top:50%;transform:translateY(-50%)}
+.boot-title{font-size:14px;font-weight:700;letter-spacing:.32em;color:#a0c0d8;text-transform:uppercase;text-shadow:0 0 20px rgba(100,160,210,.4)}
+.boot-sub{font-size:7px;letter-spacing:.3em;color:#506070;text-transform:uppercase;margin-top:-12px}
+.boot-status{font-size:8px;letter-spacing:.2em;color:#607888;text-transform:uppercase}
+.boot-bar-wrap{width:240px;height:2px;background:rgba(255,255,255,.05);overflow:hidden;border-radius:1px}
+.boot-bar{height:100%;width:0;background:linear-gradient(90deg,#304860,#7090b0,#a0c0d8);transition:width .2s linear}
+
+@keyframes shake{0%{transform:translate(0,0)}12%{transform:translate(-5px,3px)}25%{transform:translate(4px,-4px)}37%{transform:translate(-4px,2px)}50%{transform:translate(3px,-3px)}62%{transform:translate(-3px,3px)}75%{transform:translate(2px,-2px)}87%{transform:translate(-1px,1px)}100%{transform:translate(0,0)}}
+.shaking{animation:shake .5s ease both}
+
+#dashboard-zoom{width:100%;height:100%;transform:scale(1.08);opacity:0;transition:transform .8s cubic-bezier(.2,1,.3,1),opacity .6s ease;position:absolute;inset:0}
+#dashboard-zoom.entered{transform:scale(1);opacity:1}
+
+/* ═══════════════════════════
+   HOME PAGE (LANDING)
+═══════════════════════════ */
+#page-home .holo-bg{align-items:center;justify-content:center}
+.home-center{display:flex;flex-direction:column;align-items:center;gap:20px;z-index:2;position:relative}
+.home-emblem{width:82px;height:82px;border-radius:50%;border:2px solid var(--accent);display:flex;align-items:center;justify-content:center;background:rgba(0,200,255,.04);box-shadow:0 0 24px rgba(0,200,255,.15);animation:home-pulse 2s ease-in-out infinite alternate}
+@keyframes home-pulse{from{box-shadow:0 0 14px rgba(0,200,255,.12)}to{box-shadow:0 0 38px rgba(0,200,255,.32)}}
+.home-title{font-size:26px;font-weight:900;letter-spacing:.38em;color:var(--text);text-transform:uppercase}
+.home-title span{color:var(--accent);text-shadow:0 0 22px rgba(0,200,255,.5)}
+.home-tagline{font-size:8px;letter-spacing:.28em;color:var(--text2);text-transform:uppercase;margin-top:-8px}
+.home-divider{width:180px;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.35}
+/* Enter button */
+.enter-btn{display:inline-flex;align-items:center;gap:10px;font-family:'Orbitron',monospace;font-size:11px;font-weight:700;letter-spacing:.28em;text-transform:uppercase;color:var(--text);background:rgba(0,200,255,.06);border:1px solid var(--accent);border-radius:2px;padding:14px 36px;cursor:pointer;transition:all .25s;position:relative;overflow:hidden;outline:none}
+.enter-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(0,200,255,.12),transparent);transform:translateX(-100%);transition:transform .4s}
+.enter-btn:hover{color:var(--accent);background:rgba(0,200,255,.1);text-shadow:0 0 12px rgba(0,200,255,.6);box-shadow:0 0 20px rgba(0,200,255,.2)}
+.enter-btn:hover::before{transform:translateX(100%)}
+.enter-btn-text{letter-spacing:.32em}
+.home-version{font-size:7px;letter-spacing:.2em;color:var(--text3);text-transform:uppercase}
+.home-scanline{position:absolute;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(0,200,255,.15),transparent);animation:scan 8s linear infinite}
+
+/* ═══════════════════════════
+   PAGE TRANSITION — holo wipe
+═══════════════════════════ */
+#page-transition-scan{
+  position:absolute;left:0;right:0;height:4px;top:-4px;
+  background:linear-gradient(90deg,transparent,rgba(0,200,255,.7),rgba(0,235,255,1),rgba(0,200,255,.7),transparent);
+  box-shadow:0 0 18px 6px rgba(0,200,255,.45),0 0 40px 2px rgba(0,200,255,.15);
+  z-index:50;pointer-events:none;display:none;
+}
+#page-transition-overlay{
+  position:absolute;inset:0;z-index:49;pointer-events:none;
+  background:linear-gradient(180deg,rgba(0,200,255,.04) 0%,rgba(0,200,255,.02) 100%);
+  opacity:0;
+}
+
+/* ═══════════════════════════
+   DAILY PROMPT PAGE
+═══════════════════════════ */
+#page-prompt .holo-bg{align-items:center;justify-content:center}
+.prompt-center{display:flex;flex-direction:column;align-items:center;gap:18px;z-index:2;width:500px}
+.prompt-header{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+.prompt-title{font-size:14px;font-weight:700;letter-spacing:.22em;color:var(--text);text-transform:uppercase}
+.prompt-sub{font-size:9px;letter-spacing:.18em;color:var(--text2);text-transform:uppercase}
+.prompt-divider{width:100%;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.3}
+.prompt-questions{display:flex;flex-direction:column;gap:16px;width:100%}
+.pq-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;background:rgba(0,200,255,.03);border:1px solid var(--border2);border-radius:2px}
+.pq-label{font-size:11px;color:var(--text2);letter-spacing:.08em;display:flex;align-items:center;gap:8px}
+.pq-label i{color:var(--accent);font-size:15px}
+.pq-input-wrap{display:flex;align-items:center;gap:10px}
+.pq-value-display{font-size:13px;font-weight:700;color:var(--text);letter-spacing:.1em;min-width:64px;text-align:center}
+.pq-stepper{width:28px;height:28px;background:rgba(0,200,255,.07);border:1px solid var(--border2);color:var(--text2);font-size:16px;cursor:pointer;border-radius:2px;display:flex;align-items:center;justify-content:center;transition:all .2s;font-family:'Orbitron',monospace;line-height:1}
+.pq-stepper:hover{color:var(--accent);border-color:var(--accent)}
+.pq-toggle-wrap{display:flex;gap:8px}
+.pq-toggle{font-family:'Orbitron',monospace;font-size:9px;font-weight:700;letter-spacing:.14em;padding:6px 18px;border:1px solid var(--border2);background:rgba(0,0,0,.2);color:var(--text2);cursor:pointer;border-radius:2px;transition:all .2s}
+.pq-toggle.active{background:rgba(0,200,255,.12);border-color:var(--accent);color:var(--accent)}
+.pq-toggle:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ═══════════════════════════
+   CALENDAR PAGE
+═══════════════════════════ */
+.cal-wrap{flex:1;display:flex;flex-direction:column;padding:14px 20px 12px;gap:12px;overflow:hidden}
+.cal-scores-row{display:flex;gap:12px;flex-shrink:0}
+.cal-score-card{flex:1;background:rgba(0,200,255,.04);border:1px solid var(--border2);border-radius:2px;padding:10px 14px;border-top:2px solid var(--accent)}
+.cal-score-label{font-size:8px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--text2);margin-bottom:4px}
+.cal-score-num{font-size:24px;font-weight:700;color:var(--accent);letter-spacing:.05em;text-shadow:0 0 12px rgba(0,200,255,.4);line-height:1}
+.cal-score-sub{font-size:9px;color:var(--text2);letter-spacing:.06em;margin-top:4px}
+.cal-score-legend{border-top-color:var(--amber)}
+.cal-legend-row{display:flex;align-items:center;gap:7px;font-size:9px;color:var(--text2);margin-bottom:4px;letter-spacing:.04em}
+.cal-legend-row:last-child{margin-bottom:0}
+.cal-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.cal-dot.green{background:#22cc66}
+.cal-dot.yellow{background:#e8a020}
+.cal-dot.red{background:#cc3333}
+.cal-month-nav{display:flex;align-items:center;gap:14px;flex-shrink:0}
+.cal-month-label{font-size:11px;font-weight:700;letter-spacing:.18em;color:var(--text);text-transform:uppercase;min-width:160px;text-align:center}
+.cal-grid-header{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;flex-shrink:0}
+.cal-grid-header span{font-size:7px;font-weight:700;letter-spacing:.14em;color:var(--text2);text-align:center;padding:3px 0;text-transform:uppercase}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;flex:1}
+.cal-day{border:1px solid var(--border);border-radius:2px;background:rgba(10,18,30,.5);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:default;transition:border-color .15s;min-height:0;position:relative;padding:3px 2px}
+.cal-day.empty{background:transparent;border-color:transparent}
+.cal-day.today{border-color:var(--accent);box-shadow:0 0 6px rgba(0,200,255,.2)}
+.cal-day.has-data{cursor:pointer}
+.cal-day.has-data:hover{border-color:var(--accent)}
+.cal-day .cal-dn{font-size:9px;font-weight:700;color:var(--text2);letter-spacing:.06em}
+.cal-day.today .cal-dn{color:var(--accent)}
+.cal-day .cal-pip{width:7px;height:7px;border-radius:50%;margin-top:3px}
+.cal-day.score-green{background:rgba(34,204,102,.08);border-color:rgba(34,204,102,.35)}
+.cal-day.score-green .cal-dn{color:#44dd88}
+.cal-day.score-green .cal-pip{background:#22cc66}
+.cal-day.score-yellow{background:rgba(232,160,32,.08);border-color:rgba(232,160,32,.35)}
+.cal-day.score-yellow .cal-dn{color:var(--amber)}
+.cal-day.score-yellow .cal-pip{background:var(--amber)}
+.cal-day.score-red{background:rgba(204,51,51,.08);border-color:rgba(204,51,51,.35)}
+.cal-day.score-red .cal-dn{color:#e05050}
+.cal-day.score-red .cal-pip{background:#cc3333}
+/* tooltip handled by JS floating layer */
+
+/* Save toast */
+#save-toast{
+  position:absolute;bottom:22px;left:50%;transform:translateX(-50%) translateY(60px);
+  background:rgba(8,20,34,.96);border:1px solid var(--accent);border-radius:2px;
+  padding:8px 22px;font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--accent);white-space:nowrap;z-index:500;pointer-events:none;
+  transition:transform .3s cubic-bezier(.22,1,.36,1),opacity .3s;opacity:0;
+}
+#save-toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+/* Storage status in month nav */
+.cal-storage-status{font-size:8px;letter-spacing:.1em;color:var(--text2);margin-left:auto;padding:2px 0}
+
+/* Calendar sidebar item */
+.sb-calendar{border-color:rgba(0,200,255,.3)!important;background:rgba(0,200,255,.05)!important}
+.sb-calendar:hover{color:var(--accent)!important;border-color:var(--accent)!important}
+
+/* ═══════════════════════════
+   INNER PAGE COMMON
+═══════════════════════════ */
+.body-row{display:flex;flex:1;overflow:hidden;position:relative;z-index:1}
+</style>
+</head>
+<body>
+<!-- Frameless window controls -->
+<div id="win-drag"></div>
+<div id="win-controls">
+  <button id="win-min" title="Minimize" onclick="winMin()">&#8722;</button>
+  <button id="win-close" title="Close" onclick="winClose()">&#10005;</button>
+</div>
+<script>
+// Electron window control bridge — gracefully falls back in browser
+function winClose(){
+  if(window.electronAPI) window.electronAPI.close();
+  else window.close();
+}
+function winMin(){
+  if(window.electronAPI) window.electronAPI.minimize();
+}
+</script>
+<div id="app">
+
+  <!-- BOOT SCREEN -->
+  <div class="boot-screen" id="boot-screen">
+    <div class="boot-emblem">
+      <div class="e-dot"></div><div class="e-dot"></div><div class="e-dot"></div><div class="e-dot"></div>
+      <div class="boot-inner"><i class="ti ti-shield-bolt"></i></div>
+    </div>
+    <div class="boot-title">ECHELON<span style="color:#607888">OS</span></div>
+    <div class="boot-sub">Secure Tactical Interface v2.4</div>
+    <div class="boot-status" id="boot-status">Initializing secure vault...</div>
+    <div class="boot-bar-wrap"><div class="boot-bar" id="boot-bar"></div></div>
+  </div>
+
+  <!-- VAULT GATE -->
+  <div class="gate-wrap" id="gate-wrap">
+    <!-- LEFT DOOR -->
+    <div class="gate-door gate-door-left" id="gate-left">
+      <div class="vault-face"></div>
+      <div class="vault-brush"></div>
+      <!-- Horizontal structure lines -->
+      <div class="v-hline" style="top:12%"></div><div class="v-hline" style="top:25%"></div>
+      <div class="v-hline" style="top:38%"></div><div class="v-hline" style="top:50%"></div>
+      <div class="v-hline" style="top:62%"></div><div class="v-hline" style="top:75%"></div><div class="v-hline" style="top:88%"></div>
+      <!-- Vertical columns -->
+      <div class="v-vcol" style="left:18%"></div><div class="v-vcol" style="left:50%"></div><div class="v-vcol" style="left:78%"></div>
+      <!-- Bolts grid -->
+      <div class="vault-bolt" style="left:12%;top:10%"></div><div class="vault-bolt" style="left:45%;top:10%"></div><div class="vault-bolt" style="left:78%;top:10%"></div>
+      <div class="vault-bolt" style="left:12%;top:30%"></div><div class="vault-bolt" style="left:45%;top:30%"></div><div class="vault-bolt" style="left:78%;top:30%"></div>
+      <div class="vault-bolt" style="left:12%;top:50%"></div><div class="vault-bolt" style="left:45%;top:50%"></div><div class="vault-bolt" style="left:78%;top:50%"></div>
+      <div class="vault-bolt" style="left:12%;top:70%"></div><div class="vault-bolt" style="left:45%;top:70%"></div><div class="vault-bolt" style="left:78%;top:70%"></div>
+      <div class="vault-bolt" style="left:12%;top:88%"></div><div class="vault-bolt" style="left:45%;top:88%"></div><div class="vault-bolt" style="left:78%;top:88%"></div>
+      <!-- Wheel hub left door -->
+      <div class="vault-hub" style="width:90px;height:90px;left:50%;top:50%;transform:translate(-50%,-50%)">
+        <div class="vault-spoke" style="width:44px;left:50%;top:50%;transform:translateY(-50%) rotate(0deg)"></div>
+        <div class="vault-spoke" style="width:44px;left:50%;top:50%;transform:translateY(-50%) rotate(45deg)"></div>
+        <div class="vault-spoke" style="width:44px;left:50%;top:50%;transform:translateY(-50%) rotate(90deg)"></div>
+        <div class="vault-spoke" style="width:44px;left:50%;top:50%;transform:translateY(-50%) rotate(135deg)"></div>
+      </div>
+      <!-- Concentric rings centered -->
+      <div class="vault-ring" style="width:140px;height:140px;left:50%;top:50%;transform:translate(-50%,-50%)"></div>
+      <div class="vault-ring" style="width:200px;height:200px;left:50%;top:50%;transform:translate(-50%,-50%)"></div>
+      <!-- Seam on RIGHT edge of LEFT door -->
+      <div class="vault-seam-strip left-door"></div>
+    </div>
+
+    <!-- RIGHT DOOR -->
+    <div class="gate-door gate-door-right" id="gate-right">
+      <div class="vault-face"></div>
+      <div class="vault-brush"></div>
+      <div class="v-hline" style="top:12%"></div><div class="v-hline" style="top:25%"></div>
+      <div class="v-hline" style="top:38%"></div><div class="v-hline" style="top:50%"></div>
+      <div class="v-hline" style="top:62%"></div><div class="v-hline" style="top:75%"></div><div class="v-hline" style="top:88%"></div>
+      <div class="v-vcol" style="left:18%"></div><div class="v-vcol" style="left:50%"></div><div class="v-vcol" style="left:78%"></div>
+      <div class="vault-bolt" style="left:12%;top:10%"></div><div class="vault-bolt" style="left:45%;top:10%"></div><div class="vault-bolt" style="left:78%;top:10%"></div>
+      <div class="vault-bolt" style="left:12%;top:30%"></div><div class="vault-bolt" style="left:45%;top:30%"></div><div class="vault-bolt" style="left:78%;top:30%"></div>
+      <div class="vault-bolt" style="left:12%;top:50%"></div><div class="vault-bolt" style="left:45%;top:50%"></div><div class="vault-bolt" style="left:78%;top:50%"></div>
+      <div class="vault-bolt" style="left:12%;top:70%"></div><div class="vault-bolt" style="left:45%;top:70%"></div><div class="vault-bolt" style="left:78%;top:70%"></div>
+      <div class="vault-bolt" style="left:12%;top:88%"></div><div class="vault-bolt" style="left:45%;top:88%"></div><div class="vault-bolt" style="left:78%;top:88%"></div>
+      <div class="vault-hub" style="width:90px;height:90px;left:50%;top:50%;transform:translate(-50%,-50%)">
+        <div class="vault-spoke" style="width:44px;left:50%;top:50%;transform:translateY(-50%) rotate(0deg)"></div>
+        <div class="vault-spoke" style="width:44px;left:50%;top:50%;transform:translateY(-50%) rotate(45deg)"></div>
+        <div class="vault-spoke" style="width:44px;left:50%;top:50%;transform:translateY(-50%) rotate(90deg)"></div>
+        <div class="vault-spoke" style="width:44px;left:50%;top:50%;transform:translateY(-50%) rotate(135deg)"></div>
+      </div>
+      <div class="vault-ring" style="width:140px;height:140px;left:50%;top:50%;transform:translate(-50%,-50%)"></div>
+      <div class="vault-ring" style="width:200px;height:200px;left:50%;top:50%;transform:translate(-50%,-50%)"></div>
+      <!-- Seam on LEFT edge of RIGHT door -->
+      <div class="vault-seam-strip right-door"></div>
+    </div>
+  </div>
+
+  <!-- PARTICLES -->
+  <canvas id="particles-canvas" width="1024" height="768"></canvas>
+  <div id="holo-scan"></div>
+  <div id="page-transition-scan"></div>
+  <div id="page-transition-overlay"></div>
+  <div id="save-toast"></div>
+
+  <!-- DASHBOARD ZOOM WRAPPER -->
+  <div id="dashboard-zoom">
+
+    <!-- ══ PAGE: HOME ══ -->
+    <div class="page active" id="page-home">
+      <div class="holo-bg">
+        <div class="corner corner-tl"></div><div class="corner corner-tr"></div>
+        <div class="corner corner-bl"></div><div class="corner corner-br"></div>
+        <div class="home-scanline"></div>
+        <div class="home-center">
+          <div class="home-emblem"><i class="ti ti-shield-bolt" style="font-size:34px;color:var(--accent)"></i></div>
+          <div class="home-title">ECHO<span>LON</span></div>
+          <div class="home-tagline">Tactical Performance System</div>
+          <div class="home-divider"></div>
+          <button class="enter-btn" onclick="showPage('page-overview')">
+            <span class="enter-btn-text">ENTER</span>
+            <i class="ti ti-arrow-right" style="font-size:13px"></i>
+          </button>
+          <div class="home-version">v2.4 — For Gamers, By Gamers</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: DAILY PROMPT ══ -->
+    <div class="page" id="page-prompt">
+      <div class="holo-bg">
+        <div class="corner corner-tl"></div><div class="corner corner-tr"></div>
+        <div class="corner corner-bl"></div><div class="corner corner-br"></div>
+        <div class="home-scanline"></div>
+        <div class="prompt-center">
+          <div class="prompt-header">
+            <i class="ti ti-clipboard-check" style="font-size:22px;color:var(--accent)"></i>
+            <div class="prompt-title">Daily Readiness Check</div>
+            <div class="prompt-sub">Answer before entering — takes 10 seconds</div>
+          </div>
+          <div class="prompt-divider"></div>
+          <div class="prompt-questions">
+
+            <div class="pq-row">
+              <div class="pq-label"><i class="ti ti-moon"></i> Hours of sleep last night?</div>
+              <div class="pq-input-wrap">
+                <button class="pq-stepper" onclick="adjustSleep(-1)">−</button>
+                <div class="pq-value-display" id="sleep-display">7 hrs</div>
+                <button class="pq-stepper" onclick="adjustSleep(1)">+</button>
+              </div>
+            </div>
+
+            <div class="pq-row">
+              <div class="pq-label"><i class="ti ti-droplet"></i> Water consumed so far today?</div>
+              <div class="pq-input-wrap">
+                <button class="pq-stepper" onclick="adjustWater(-0.5)">−</button>
+                <div class="pq-value-display" id="water-display">1.5 L</div>
+                <button class="pq-stepper" onclick="adjustWater(0.5)">+</button>
+              </div>
+            </div>
+
+            <div class="pq-row">
+              <div class="pq-label"><i class="ti ti-run"></i> Did you exercise or stretch today?</div>
+              <div class="pq-toggle-wrap">
+                <button class="pq-toggle" id="toggle-no" onclick="setExercise(false)">NO</button>
+                <button class="pq-toggle active" id="toggle-yes" onclick="setExercise(true)">YES</button>
+              </div>
+            </div>
+
+          </div>
+          <div class="prompt-divider"></div>
+          <button class="enter-btn" onclick="submitPrompt()" style="margin-top:4px">
+            <span class="enter-btn-text">CONFIRM &amp; ENTER</span>
+            <i class="ti ti-arrow-right" style="font-size:13px"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: CALENDAR ══ -->
+    <div class="page" id="page-calendar">
+      <div class="holo-bg" style="flex:1">
+        <div class="corner corner-tl"></div><div class="corner corner-tr"></div>
+        <div class="corner corner-bl"></div><div class="corner corner-br"></div>
+        <div class="scan-line"></div>
+        <div class="topbar">
+          <div class="topbar-title"><i class="ti ti-calendar-stats" style="font-size:14px"></i> Readiness Calendar</div>
+          <div class="topbar-links">
+            <span class="back-btn" onclick="exportData()" title="Download a backup of all your data"><i class="ti ti-download" style="font-size:11px"></i> Export</span>
+            <span class="back-btn" onclick="document.getElementById('import-file').click()" title="Restore from a backup file"><i class="ti ti-upload" style="font-size:11px"></i> Import</span>
+            <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
+            <span class="back-btn" onclick="showPage('page-overview')"><i class="ti ti-arrow-left" style="font-size:11px"></i> Overview</span>
+          </div>
+        </div>
+
+        <div class="cal-wrap">
+          <!-- Score banner -->
+          <div class="cal-scores-row">
+            <div class="cal-score-card" id="cal-today-card">
+              <div class="cal-score-label">Today's Readiness</div>
+              <div class="cal-score-num" id="cal-today-score">—</div>
+              <div class="cal-score-sub" id="cal-today-breakdown">No data yet</div>
+            </div>
+            <div class="cal-score-card" id="cal-weekly-card">
+              <div class="cal-score-label">Weekly Average</div>
+              <div class="cal-score-num" id="cal-weekly-score">—</div>
+              <div class="cal-score-sub" id="cal-weekly-sub">Last 7 days</div>
+            </div>
+            <div class="cal-score-card cal-score-legend">
+              <div class="cal-score-label">Score Key</div>
+              <div class="cal-legend-row"><span class="cal-dot green"></span><span>Green  75–100 pts</span></div>
+              <div class="cal-legend-row"><span class="cal-dot yellow"></span><span>Yellow  40–74 pts</span></div>
+              <div class="cal-legend-row"><span class="cal-dot red"></span><span>Red  0–39 pts</span></div>
+            </div>
+          </div>
+
+          <!-- Month nav -->
+          <div class="cal-month-nav">
+            <button class="pq-stepper" onclick="changeMonth(-1)">&#8249;</button>
+            <div class="cal-month-label" id="cal-month-label">June 2025</div>
+            <button class="pq-stepper" onclick="changeMonth(1)">&#8250;</button>
+            <div class="cal-storage-status" id="cal-storage-status"></div>
+          </div>
+
+          <!-- Day grid -->
+          <div class="cal-grid-header">
+            <span>SUN</span><span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span>
+          </div>
+          <div class="cal-grid" id="cal-grid"></div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: OVERVIEW ══ -->
+    <div class="page" id="page-overview">
+      <div class="holo-bg" style="flex:1">
+        <div class="corner corner-tl"></div><div class="corner corner-tr"></div>
+        <div class="corner corner-bl"></div><div class="corner corner-br"></div>
+        <div class="scan-line"></div>
+        <!-- Topbar -->
+        <div class="topbar" id="topbar-overview">
+          <div class="topbar-title">
+            <i class="ti ti-cpu" style="font-size:14px"></i>
+            Command Overview
+            <span style="color:var(--text2);font-weight:400;font-size:8px;letter-spacing:.08em">// Menu</span>
+          </div>
+          <div class="topbar-links">
+            <a onclick="toggleOverview()"><i class="ti ti-layout-sidebar" style="font-size:12px;vertical-align:-1px;margin-right:3px"></i><span id="collapse-label">Collapse</span></a>
+          </div>
+        </div>
+        <div class="body-row" id="body-area">
+          <div class="main" id="main-area">
+
+            <!-- Hero headline -->
+            <div class="holo-section hero-headline" id="sec-hero">
+              <h1>Improve your gameplay today using our <span>bleeding edge tools!</span></h1>
+              <p>For gamers, by gamers</p>
+            </div>
+
+            <!-- Quote -->
+            <div class="holo-section" id="sec-quote">
+              <div class="quote-bar">
+                <span class="quote-text" id="quote-text">"Champions keep playing until they get it right."</span>
+                <span class="quote-tag" id="quote-tag">MINDSET</span>
+                <button class="mech-btn amber" onclick="nextQuote()" style="margin-left:8px;flex-shrink:0">
+                  <i class="ti ti-refresh" style="font-size:11px"></i> Cycle
+                </button>
+              </div>
+            </div>
+
+            <!-- Focus + Goal -->
+            <div class="holo-section" id="sec-focus">
+              <div class="two-col">
+                <div>
+                  <div class="field-label">Focus of the session</div>
+                  <textarea class="mech-input">(fill out your goal for the session here)</textarea>
+                </div>
+                <div>
+                  <div class="field-label">End season goal</div>
+                  <textarea class="mech-input">(fill out your end season goal here)</textarea>
+                </div>
+              </div>
+            </div>
+
+            <!-- Meta Tips -->
+            <div id="meta-tips-wrap">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:10px">
+                <div class="sec-label" style="margin-bottom:0;flex:1">Meta tips for this season</div>
+                <div class="dropdown" id="game-dropdown">
+                  <button class="mech-btn" onclick="toggleDropdown()">
+                    <i class="ti ti-device-gamepad-2" style="font-size:11px"></i>
+                    <span id="active-game-badge">Choose game</span>
+                    <i class="ti ti-chevron-down" style="font-size:10px"></i>
+                  </button>
+                  <div class="dropdown-menu" id="dropdown-menu" style="display:none"></div>
+                </div>
+              </div>
+              <div class="meta-tips-box" id="meta-tips-box">
+                <div class="meta-header"><i class="ti ti-flame" style="font-size:11px"></i> <span id="meta-game-label">Select a game to load tips</span></div>
+                <div id="meta-tips-list">
+                  <div style="font-size:9px;color:var(--text3);letter-spacing:.1em;padding:4px 0">Choose a game from the dropdown above to reveal this season's meta tips.</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+          <!-- Sidebar -->
+          <div class="sidebar" id="sidebar-area">
+            <div class="sb-item top-item" onclick="showPage('page-pregame')">Pre-game</div>
+            <div class="sb-item" onclick="showPage('page-postgame')">Post-game</div>
+            <div class="sb-item" onclick="showPage('page-ideology')">Ideology</div>
+            <div class="sb-item" onclick="showPage('page-ritual')">Ritual</div>
+            <div class="sb-item" onclick="showPage('page-nutrition')">Nutrition</div>
+            <div class="sb-item" onclick="showPage('page-mental')">Mental routine</div>
+            <div class="sb-item" onclick="showPage('page-physical')">Physical routine</div>
+            <div class="sb-item sb-calendar" onclick="showPage('page-calendar')"><i class="ti ti-calendar-stats" style="font-size:11px;display:block;margin-bottom:2px"></i>Readiness</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ INNER PAGES ══ -->
+
+    <!-- PRE-GAME -->
+    <div class="page" id="page-pregame">
+      <div class="holo-bg" style="flex:1">
+        <div class="corner corner-tl"></div><div class="corner corner-tr"></div><div class="corner corner-bl"></div><div class="corner corner-br"></div>
+        <div class="scan-line"></div>
+        <div class="topbar">
+          <div class="topbar-title"><i class="ti ti-sword" style="font-size:14px"></i> Pre-Game</div>
+          <div class="topbar-links">
+            <span class="back-btn" onclick="showPage('page-overview')"><i class="ti ti-arrow-left" style="font-size:11px"></i> Overview</span>
+            
+          </div>
+        </div>
+        <div class="ip-wrap">
+          <div class="ip-header-block">
+            <div class="ip-page-name">Pre-Game</div>
+            <div class="ip-divider"></div>
+            <p class="ip-intro">What you do in the hour before a match defines the ceiling of your performance. Pre-game preparation is the difference between reacting to the game and commanding it. Elite competitors treat warm-up as a non-negotiable ritual, not an afterthought.</p>
+            <div class="ip-facts">
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-chart-line"></i></span><span>Studies show players who follow a structured pre-game routine perform up to <strong>23% more consistently</strong> in the first 10 minutes of play — the period with the highest impact on match outcome.</span></div>
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-brain"></i></span><span>Mental priming before competition reduces tilt risk significantly. Athletes who set a clear intention before starting report lower frustration responses after early losses or mistakes.</span></div>
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-activity"></i></span><span>Physical warm-up — including wrist mobility, posture reset, and a 5-minute aim/mechanics drill — measurably improves reaction time and reduces early-game errors across all skill levels.</span></div>
+            </div>
+          </div>
+          <div class="ip-workspace">
+            <div class="ws-section">
+              <div class="ws-section-title"><i class="ti ti-target"></i> Setting Intentions That Actually Drive Improvement</div>
+              <div class="ws-body">
+                <p>Pre-game is entirely about setting intentions and preparing for peak performance. At the Overview page in this app you will find the <strong>"Focus of the Session"</strong> and <strong>"End Season Goal"</strong> fields. Fill them out before every session for whatever game you are playing, and let them serve as your performance standard for that day.</p>
+                <p>Your goal needs to be <strong>specific and actionable</strong> — never vague. "Win games" is not a goal. A goal sounds like: <em>"Reach 9 CS per minute while maintaining strong kill participation"</em> or <em>"Hold angles correctly and trade positively in 70% of my duels."</em> Vague goals produce vague results. Precise goals produce measurable improvement.</p>
+              </div>
+            </div>
+            <div class="ws-section">
+              <div class="ws-section-title"><i class="ti ti-crosshair"></i> The One Question to Ask Before Every Game</div>
+              <div class="ws-body">
+                <p>Once your session goal is set, the only question you need to ask yourself before each individual game is: <strong>"What is my focus for this game?"</strong> — and then ensure that focus is directly aligned with the goal you set at the Overview. If it is, queue up. Execute. If it isn't, re-center.</p>
+              </div>
+              <div class="ws-highlight">
+                <span class="ws-highlight-icon"><i class="ti ti-trending-up"></i></span>
+                <span class="ws-highlight-text">Do this consistently and you will improve in a <strong>deliberate, compounding way</strong> — advancing specifically in the areas that matter most to your progression, because you defined them as important before you ever clicked ready.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- POST-GAME -->
+    <div class="page" id="page-postgame">
+      <div class="holo-bg" style="flex:1">
+        <div class="corner corner-tl"></div><div class="corner corner-tr"></div><div class="corner corner-bl"></div><div class="corner corner-br"></div>
+        <div class="scan-line"></div>
+        <div class="topbar">
+          <div class="topbar-title"><i class="ti ti-trophy" style="font-size:14px"></i> Post-Game</div>
+          <div class="topbar-links">
+            <span class="back-btn" onclick="showPage('page-overview')"><i class="ti ti-arrow-left" style="font-size:11px"></i> Overview</span>
+            
+          </div>
+        </div>
+        <div class="ip-wrap">
+          <div class="ip-header-block">
+            <div class="ip-page-name">Post-Game</div>
+            <div class="ip-divider"></div>
+            <p class="ip-intro">The match ends when you close the client — not when the scoreboard appears. Post-game review is where growth actually happens. Without deliberate reflection, losses become noise and wins become luck. With it, every game is data that compounds into skill.</p>
+            <div class="ip-facts">
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-eye"></i></span><span>Players who review their replays for just <strong>15 minutes per session</strong> identify recurring mistakes twice as fast as those who rely on in-game feel alone — accelerating rank progression measurably.</span></div>
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-mood-sad"></i></span><span>Emotional cool-down after a loss is critical. Queuing immediately after tilt increases loss rate by an estimated 30–40%. A 10-minute break resets cortisol levels and decision-making quality.</span></div>
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-checklist"></i></span><span>The most effective debrief format is simple: one thing you did well, one decision you'd change, and one mechanic to isolate in your next session. Complexity is the enemy of consistency.</span></div>
+            </div>
+          </div>
+          <div class="ip-workspace">
+            <div class="ws-section">
+              <div class="ws-section-title"><i class="ti ti-refresh"></i> Reflection as a Performance Tool</div>
+              <div class="ws-body">
+                <p>Post-game is entirely about reflection and improvement. After any game, spend a solid <strong>2–3 minutes reflecting</strong> on what went well, what went right, and where you succeeded. Many coaches will tell you to spend hours rewatching your gameplay — and while that is a valid approach for deep study, the more targeted truth is this: watch only the moments you believe have direct value to your improvement plan.</p>
+                <p>Your improvement goal is already clear, established in your pre-game focus. Now all you need to do is ask yourself two questions: <em>"Did I execute the way I intended?"</em> and <em>"Did I reach the standard I set for myself before this game?"</em></p>
+              </div>
+            </div>
+            <div class="ws-section">
+              <div class="ws-section-title"><i class="ti ti-git-branch"></i> Two Paths — One Process</div>
+              <div class="ws-body">
+                <p>If the answer is <strong>yes</strong> — simply identify 1–2 small areas with improvement potential, acknowledge them clearly, and carry that awareness into the next game. Consistency maintained. If the answer is <strong>no</strong> — ask yourself: <em>"Why did it go wrong?"</em> and <em>"What specifically do I do differently next time?"</em> Then set a clear, concrete intention for the next game based on what you find.</p>
+              </div>
+              <div class="ws-highlight">
+                <span class="ws-highlight-icon"><i class="ti ti-check"></i></span>
+                <span class="ws-highlight-text">This process is <strong>simple, but it is the most effective method for sustained improvement</strong> — and it is the process the best players in the world run after every single game. Quick, deliberate, and non-negotiable.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- IDEOLOGY -->
+    <div class="page" id="page-ideology">
+      <div class="holo-bg" style="flex:1">
+        <div class="corner corner-tl"></div><div class="corner corner-tr"></div><div class="corner corner-bl"></div><div class="corner corner-br"></div>
+        <div class="scan-line"></div>
+        <div class="topbar">
+          <div class="topbar-title"><i class="ti ti-brain" style="font-size:14px"></i> Ideology</div>
+          <div class="topbar-links">
+            <span class="back-btn" onclick="showPage('page-overview')"><i class="ti ti-arrow-left" style="font-size:11px"></i> Overview</span>
+            
+          </div>
+        </div>
+        <div class="ip-wrap">
+          <div class="ip-header-block">
+            <div class="ip-page-name">Ideology</div>
+            <div class="ip-divider"></div>
+            <p class="ip-intro">Your ideology is the operating system beneath every decision you make in-game and out. It defines why you compete, how you handle adversity, and what standard you hold yourself to when no one is watching. Without a defined competitive philosophy, effort is directionless.</p>
+            <div class="ip-facts">
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-target"></i></span><span>Athletes with a clearly defined competitive identity — a personal "why" — sustain training motivation <strong>significantly longer</strong> than those motivated purely by rank or external validation, according to sports psychology research.</span></div>
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-scale"></i></span><span>A growth-oriented ideology (valuing process over outcome) correlates directly with faster skill acquisition and lower burnout. Fixed mindsets plateau earlier and recover from losses more slowly.</span></div>
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-shield"></i></span><span>Elite esports organizations explicitly build team ideology documents. Shared values around accountability, communication, and preparation are among the top predictors of team longevity and performance under pressure.</span></div>
+            </div>
+          </div>
+          <div class="ip-workspace">
+            <div class="ws-section">
+              <div class="ws-section-title"><i class="ti ti-shield-bolt"></i> The Echelon Philosophy</div>
+              <div class="ws-body">
+                <p>The ideology we operate by at Echelon Performance Group is grounded in a single conviction: <strong>passion and consistency are the two non-negotiable requirements for maximum competitive performance.</strong> Not raw talent. Not luck. Not hours alone. Passion directed by consistent systems.</p>
+                <p>That means having routines in place, rituals prepared, and intentional game sessions planned — every time. Combine all of these concepts together and you have the foundation that separates the best competitors in the world from everyone else reaching for the same ceiling.</p>
+              </div>
+            </div>
+            <div class="ws-section">
+              <div class="ws-section-title"><i class="ti ti-world"></i> Built on Real Performance Science</div>
+              <div class="ws-body">
+                <p>Just like professional esports athletes at the highest level, we take the full spectrum of physical and mental preparation principles used by the world's elite performers — and make them accessible and actionable for every competitor using this platform. The tools in this app are grounded in studies on human performance, cognitive science, and preventative care for the esports athlete's specific demands.</p>
+                <p>This matters because it is genuinely <strong>difficult to figure out in isolation</strong> while simultaneously pushing for the highest level of play. Most players are spending all their bandwidth on mechanics and game knowledge — which is necessary, but incomplete. Echelon fills the gap: the preparation, the recovery, the mindset infrastructure that makes everything else perform at its ceiling.</p>
+              </div>
+              <div class="ws-highlight">
+                <span class="ws-highlight-icon"><i class="ti ti-rocket"></i></span>
+                <span class="ws-highlight-text">With the tools we present here, you can reach <strong>the highest performance of your career</strong> — and sustain it for far longer than you thought possible. Echelon Performance Group is here to help you get there.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RITUAL -->
+    <div class="page" id="page-ritual">
+      <div class="holo-bg" style="flex:1">
+        <div class="corner corner-tl"></div><div class="corner corner-tr"></div><div class="corner corner-bl"></div><div class="corner corner-br"></div>
+        <div class="scan-line"></div>
+        <div class="topbar">
+          <div class="topbar-title"><i class="ti ti-repeat" style="font-size:14px"></i> Ritual</div>
+          <div class="topbar-links">
+            <span class="back-btn" onclick="showPage('page-overview')"><i class="ti ti-arrow-left" style="font-size:11px"></i> Overview</span>
+            
+          </div>
+        </div>
+        <div class="ip-wrap">
+          <div class="ip-header-block">
+            <div class="ip-page-name">Ritual</div>
+            <div class="ip-divider"></div>
+            <p class="ip-intro">Rituals are the bridge between intention and execution. They signal to your mind and body that it is time to perform — converting preparation into a conditioned state of readiness. The best competitors in the world don't rely on motivation; they rely on ritual.</p>
+            <div class="ip-facts">
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-clock"></i></span><span>Consistent pre-performance rituals activate the same neural pathways as past peak performances, effectively giving your brain a shortcut to a <strong>focused, competitive state</strong> — a phenomenon called anchoring in behavioral psychology.</span></div>
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-repeat-once"></i></span><span>The ritual doesn't need to be complex. Top esports athletes report that even a 3-step routine — controlled breathing, posture check, and a single affirmation — produces measurable reductions in pre-match anxiety.</span></div>
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-moon"></i></span><span>Post-session shutdown rituals are equally important. Closing your session intentionally — logging notes, stretching, and stepping away from screens for 20 minutes — improves sleep quality and next-day cognitive sharpness.</span></div>
+            </div>
+          </div>
+          <div class="ip-workspace">
+            <div class="ws-section">
+              <div class="ws-section-title"><i class="ti ti-flame"></i> The Zone — And How Rituals Get You There</div>
+              <div class="ws-body">
+                <p>Creating a ritual is what separates good players from the absolute best. Throughout all of sports — both esports and physical — rituals are a cornerstone of reaching <strong>"the zone"</strong>: that heightened state where you never miss a shot, never miss a chance, and the entire game lays itself out before you. The ability to predict becomes almost omniscient for that session. Rituals are what consistently ensure you arrive there on game day.</p>
+                <p>LeBron James has his chalk toss. Michael Jordan had his free throw routine. Messi must step his left foot onto the pitch before his right. The list goes on across every sport and every era. In esports, the rituals vary wildly — from specific hand signals and warmup drills to curated playlists, breathing patterns, or a single phrase repeated before queueing. The form matters far less than the consistency.</p>
+              </div>
+            </div>
+            <div class="ws-section">
+              <div class="ws-section-title"><i class="ti ti-stack"></i> Pairing Your Ritual With Your Routines</div>
+              <div class="ws-body">
+                <p>A pre-game ritual paired with disciplined mental and physical routines creates a compounding effect. Each element — the mental priming, the physical readiness, the anchored cue of the ritual — reinforces the others. Together, they dramatically increase how often you enter your peak state, and how quickly you recover it when a tough game tries to pull you out.</p>
+              </div>
+              <div class="ws-highlight">
+                <span class="ws-highlight-icon"><i class="ti ti-bulb"></i></span>
+                <span class="ws-highlight-text">Build your ritual around <strong>3 repeatable steps</strong> you can perform anywhere, every time: a physical cue (e.g., rolling your wrists), a mental cue (a single focused thought or phrase), and a breath reset. Simple, consistent, and yours.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NUTRITION -->
+    <div class="page" id="page-nutrition">
+      <div class="holo-bg" style="flex:1">
+        <div class="corner corner-tl"></div><div class="corner corner-tr"></div><div class="corner corner-bl"></div><div class="corner corner-br"></div>
+        <div class="scan-line"></div>
+        <div class="topbar">
+          <div class="topbar-title"><i class="ti ti-apple" style="font-size:14px"></i> Nutrition</div>
+          <div class="topbar-links">
+            <span class="back-btn" onclick="showPage('page-overview')"><i class="ti ti-arrow-left" style="font-size:11px"></i> Overview</span>
+            
+          </div>
+        </div>
+        <div class="ip-wrap">
+          <div class="ip-header-block">
+            <div class="ip-page-name">Nutrition</div>
+            <div class="ip-divider"></div>
+            <p class="ip-intro">Your brain runs on what you feed it. Nutrition for competitive gaming isn't about aesthetics — it's about reaction time, decision clarity, and sustained focus over a multi-hour session. The right fuel is one of the most underrated performance variables in esports.</p>
+            <div class="ip-facts">
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-bolt"></i></span><span>Blood glucose stability directly impacts cognitive performance. High-sugar meals cause energy spikes followed by sharp crashes — often aligning with the <strong>mid-session slump</strong> most players attribute to mental fatigue rather than nutrition.</span></div>
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-droplet"></i></span><span>Even mild dehydration (1–2% of body weight) reduces reaction time, working memory, and concentration. Competitive players who track water intake report fewer late-game errors and significantly better tilt recovery.</span></div>
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-coffee"></i></span><span>Caffeine is effective when timed correctly — 30–45 minutes before a session, in moderate doses (100–200mg). Overconsumption or late-session use elevates anxiety, disrupts sleep, and compounds next-day performance loss.</span></div>
+            </div>
+          </div>
+          <div class="ip-workspace">
+            <div class="ws-section">
+              <div class="ws-section-title"><i class="ti ti-brain"></i> Fueling the Competitive Mind</div>
+              <div class="ws-body">
+                <p>You already know nutrition matters — but for competitive gaming, the requirements shift in a specific direction. You want <strong>brain food</strong>: fuel that won't spike your blood sugar and crash you mid-session, but instead keeps you fed, focused, and mentally sharp for the full duration of competition.</p>
+                <p>For some professionals, that's a protein-fruit shake — easy to make, easy to digest, gentle on the stomach, and effective for cognitive output. For others, it's a balanced traditional meal with a solid ratio of complex carbohydrates, healthy fats, and lean protein. Whatever your preference, the principle is the same: your brain and body need quality nutrients to sustain high-level performance across hours of play.</p>
+              </div>
+            </div>
+            <div class="ws-section">
+              <div class="ws-section-title"><i class="ti ti-list-check"></i> What to Prioritize</div>
+              <div class="ws-body">
+                <p>Foods with proven cognitive benefit include: <strong>omega-3 supplements, blueberries, walnuts, leafy greens</strong> such as broccoli and spinach, and eggs. These support memory, focus, and neural efficiency — exactly what separates clean decision-making from sloppy play in a long session.</p>
+                <p>Stay consistently hydrated throughout your session. Limit junk fats and refined carbohydrates — they provide empty calories with no cognitive upside and actively impair focus at higher quantities. Keep your nutrition routine as consistent and deliberate as every other part of your preparation.</p>
+              </div>
+              <div class="ws-highlight">
+                <span class="ws-highlight-icon"><i class="ti ti-clock"></i></span>
+                <span class="ws-highlight-text">Time your main meal <strong>60–90 minutes before your session</strong> to allow digestion without heaviness. Keep a water bottle at your setup and take a sip between games — not just when you feel thirsty.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MENTAL ROUTINE -->
+    <div class="page" id="page-mental">
+      <div class="holo-bg" style="flex:1">
+        <div class="corner corner-tl"></div><div class="corner corner-tr"></div><div class="corner corner-bl"></div><div class="corner corner-br"></div>
+        <div class="scan-line"></div>
+        <div class="topbar">
+          <div class="topbar-title"><i class="ti ti-brand-mental-health" style="font-size:14px"></i> Mental Routine</div>
+          <div class="topbar-links">
+            <span class="back-btn" onclick="showPage('page-overview')"><i class="ti ti-arrow-left" style="font-size:11px"></i> Overview</span>
+            
+          </div>
+        </div>
+        <div class="ip-wrap">
+          <div class="ip-header-block">
+            <div class="ip-page-name">Mental Routine</div>
+            <div class="ip-divider"></div>
+            <p class="ip-intro">The mental game is not a soft skill — it is the hardest skill to master and the one most responsible for peak performance under pressure. Tilt, complacency, and self-doubt are technical problems with trainable solutions. Your mental routine is where championships are built.</p>
+            <div class="ip-facts">
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-wave-sine"></i></span><span>Controlled breathing (box breathing: 4 counts in, hold 4, out 4, hold 4) activates the parasympathetic nervous system within <strong>60–90 seconds</strong>, measurably lowering heart rate and restoring decision-making clarity after high-stress moments.</span></div>
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-eye-off"></i></span><span>Visualization is used by over 90% of elite athletes surveyed. Mentally rehearsing specific in-game scenarios — clutch decisions, comeback situations — primes the brain's motor and decision pathways to execute more effectively when it matters.</span></div>
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-refresh"></i></span><span>Tilt is a neurological stress response, not a character flaw. Players who practice a defined reset routine — a physical cue, a breath, and a refocus phrase — reduce tilt frequency by up to 40% over consistent practice.</span></div>
+            </div>
+          </div>
+          <div class="ip-workspace">
+            <div class="ws-section">
+              <div class="ws-section-title"><i class="ti ti-bolt"></i> Your Mental Routine Is a Competitive Weapon</div>
+              <div class="ws-body">
+                <p>A consistent mental approach will be one of your most defining traits as a competitor in the esports scene. Having a specific, rehearsed approach to mental preparation produces tangible results: better reaction time, sharper focus, and stronger confidence when facing adversity in-game. This isn't motivation — it's a trained system.</p>
+                <p>Your mental routine should consist of a small number of deliberate steps you perform before every serious session. For some competitors it is a mantra repeated internally. For others it is a visualization — closing their eyes and clearly seeing what success looks like in that day's session, feeling the decisions before they happen. Whatever form it takes for you, the mechanism is identical: <strong>repetition creates association, and association triggers performance.</strong></p>
+              </div>
+            </div>
+            <div class="ws-section">
+              <div class="ws-section-title"><i class="ti ti-repeat"></i> How to Build the Habit</div>
+              <div class="ws-body">
+                <p>If you run the same mental routine consistently enough, your brain will begin to associate that routine with activating your competitive mindset — almost entirely on command. The conditioning compounds. Before long, sitting down and starting your routine becomes indistinguishable from entering a focused, high-performance state.</p>
+              </div>
+              <div class="ws-highlight">
+                <span class="ws-highlight-icon"><i class="ti ti-quote"></i></span>
+                <span class="ws-highlight-text">Many professionals anchor their mental routine with a <strong>single phrase or quote</strong> they say internally before every game. It doesn't matter what it is — it matters that it's always the same, and that it means something to you specifically.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PHYSICAL ROUTINE -->
+    <div class="page" id="page-physical">
+      <div class="holo-bg" style="flex:1">
+        <div class="corner corner-tl"></div><div class="corner corner-tr"></div><div class="corner corner-bl"></div><div class="corner corner-br"></div>
+        <div class="scan-line"></div>
+        <div class="topbar">
+          <div class="topbar-title"><i class="ti ti-run" style="font-size:14px"></i> Physical Routine</div>
+          <div class="topbar-links">
+            <span class="back-btn" onclick="showPage('page-overview')"><i class="ti ti-arrow-left" style="font-size:11px"></i> Overview</span>
+            
+          </div>
+        </div>
+        <div class="ip-wrap">
+          <div class="ip-header-block">
+            <div class="ip-page-name">Physical Routine</div>
+            <div class="ip-divider"></div>
+            <p class="ip-intro">Esports is a physical sport. Thousands of hours of play put real strain on your wrists, neck, back, and eyes — and physical fatigue directly degrades in-game performance. The best players treat their body as hardware: it must be maintained, warmed up, and recovered with the same discipline as any other skill.</p>
+            <div class="ip-facts">
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-hand-stop"></i></span><span>Repetitive strain injuries — particularly in the wrist and forearm — affect an estimated <strong>40–56% of competitive gamers</strong> over their career. A daily 5-minute wrist mobility and strengthening routine reduces injury risk dramatically.</span></div>
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-heart-rate-monitor"></i></span><span>Cardiovascular exercise 3–4 times per week improves cerebral blood flow, boosting cognitive endurance — the ability to maintain high-level decision-making in the late stages of long sessions when most players begin to decay.</span></div>
+              <div class="ip-fact"><span class="ip-fact-icon"><i class="ti ti-bed"></i></span><span>Sleep is the single most impactful recovery tool available. Research consistently shows that 7–9 hours of quality sleep improves reaction time, memory consolidation, and emotional regulation — all critical competitive performance variables.</span></div>
+            </div>
+          </div>
+          <div class="ip-workspace">
+            <div class="ws-section">
+              <div class="ws-section-title"><i class="ti ti-activity"></i> Consistency Is the Foundation</div>
+              <div class="ws-body">
+                <p>For physical routines — much like mental ones — consistency is the single most important factor in whether your peak skill level is available to you from the moment you sit down. A physical routine can be a series of stretches, deliberate hand movements, shoulder rolls, or a specific warmup drill that you've found gets your body physically ready for what's ahead.</p>
+                <p>The most critical aspect is not the specific exercises you choose — it's that the routine is <strong>performed before every match, without exception.</strong> This consistency, layered on top of a solid mental routine, ensures you are competing at the highest level your body and mind are capable of — and for longer than opponents who arrive unprepared.</p>
+              </div>
+            </div>
+            <div class="ws-section">
+              <div class="ws-section-title"><i class="ti ti-hand-finger"></i> Protecting Your Hardware</div>
+              <div class="ws-body">
+                <p>Beyond the pre-session warmup, integrate a daily stretching habit for the times you're not playing. <strong>Wrists, forearms, and shoulders</strong> are the primary stress points for esports athletes and the most common sites of career-affecting injuries. Five minutes of deliberate mobility work — wrist circles, forearm stretches, shoulder rotations — makes a measurable difference in performance and longevity over months and years of play.</p>
+              </div>
+              <div class="ws-highlight">
+                <span class="ws-highlight-icon"><i class="ti ti-clock"></i></span>
+                <span class="ws-highlight-text">Treat your hands like a surgeon treats theirs. <strong>5 minutes of wrist and shoulder mobility before every session</strong> is a career investment — it compounds quietly until the day it prevents an injury that would have ended your run.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /dashboard-zoom -->
+</div><!-- /app -->
+
+<script>
+/* ═══════════════ PAGE TRANSITION ═══════════════ */
+let transitioning = false;
+
+/* Instant swap — no animation, used for boot/prompt flows */
+function instantPage(targetId){
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const next = document.getElementById(targetId);
+  if(next) next.classList.add('active');
+  transitioning = false;
+}
+
+function showPage(targetId){
+  if(transitioning) return;
+  const current = document.querySelector('.page.active');
+  const next = document.getElementById(targetId);
+  if(!next || current === next) return;
+
+  transitioning = true;
+  const scan = document.getElementById('page-transition-scan');
+  const overlay = document.getElementById('page-transition-overlay');
+  const appH = 768;
+  const duration = 520; // ms for scan to travel full height
+
+  // Phase 1: scan sweeps DOWN over current page, revealing overlay tint
+  scan.style.display = 'block';
+  scan.style.top = '-4px';
+  overlay.style.opacity = '0';
+  overlay.style.transition = 'none';
+
+  const start = performance.now();
+
+  function animDown(now){
+    const frac = Math.min((now - start) / duration, 1);
+    const y = frac * (appH + 4);
+    scan.style.top = y + 'px';
+    overlay.style.opacity = (frac * 0.18).toString();
+
+    if(frac < 1){
+      requestAnimationFrame(animDown);
+    } else {
+      // Mid-point: swap pages instantly while scan is off-screen
+      current.classList.remove('active');
+      next.classList.add('active');
+      // Reset scan to top for upward wipe
+      scan.style.top = (appH + 4) + 'px';
+
+      // Phase 2: scan sweeps UP clearing the new page in
+      const start2 = performance.now();
+      function animUp(now2){
+        const frac2 = Math.min((now2 - start2) / duration, 1);
+        const y2 = (appH + 4) - frac2 * (appH + 8);
+        scan.style.top = y2 + 'px';
+        overlay.style.opacity = ((1 - frac2) * 0.18).toString();
+
+        if(frac2 < 1){
+          requestAnimationFrame(animUp);
+        } else {
+          scan.style.display = 'none';
+          overlay.style.opacity = '0';
+          transitioning = false;
+        }
+      }
+      requestAnimationFrame(animUp);
+    }
+  }
+  requestAnimationFrame(animDown);
+}
+
+/* ═══════════════ GAME DATA ═══════════════ */
+const gamesData={
+  'League of Legends':{games:[
+    {label:'Game 1',score:'22/4/11',note:'Victory',cls:'win'},
+    {label:'Game 2',score:'8/9/6',note:'Defeat',cls:'loss'},
+    {label:'Game 3',score:'15/2/9',note:'Victory',cls:'win'},
+    {label:'Game 4',score:'5/11/3',note:'Defeat',cls:'loss'},
+    {label:'Game 5',score:'18/6/14',note:'Victory',cls:'win'}],
+   tips:['Assassins and high-mobility carries dominate the current meta — prioritize champions that can one-shot backlines.',
+         'Vision control wins games: deep ward the enemy jungle at 10 minutes to track every movement.',
+         'Objective trading is essential this patch — swap Rift Herald for Dragon if the enemy team is stacking soul.',
+         'Control mages with waveclear are S-tier in mid: Orianna and Viktor punish dive-heavy team comps hard.']},
+  'Valorant':{games:[
+    {label:'Game 1',score:'24 – 18',note:'Win',cls:'win'},
+    {label:'Game 2',score:'11 – 13',note:'Loss',cls:'loss'},
+    {label:'Game 3',score:'13 – 9',note:'Win',cls:'win'},
+    {label:'Game 4',score:'8 – 13',note:'Loss',cls:'loss'},
+    {label:'Game 5',score:'13 – 7',note:'Win',cls:'win'}],
+   tips:['Aggressive early-round peeking with Jett and Reyna is statistically the highest win-rate opening play this act.',
+         'Utility-heavy setups (Sage walls + Astra gravity well) shut down fast pushes at a near 70% clip this season.',
+         'Economy discipline separates ranks: force-buying when your team full-saves is the #1 avoidable mistake.',
+         'Chamber and Cypher trap lineups on Breeze mid are nearly uncontestable — learn two per site minimum.']},
+  'CS2':{games:[
+    {label:'Game 1',score:'16 – 10',note:'Win',cls:'win'},
+    {label:'Game 2',score:'14 – 16',note:'Loss',cls:'loss'},
+    {label:'Game 3',score:'16 – 5',note:'Win',cls:'win'},
+    {label:'Game 4',score:'9 – 16',note:'Loss',cls:'loss'},
+    {label:'Game 5',score:'16 – 12',note:'Win',cls:'win'}],
+   tips:['Counter-strafing precision is more punishing in CS2\'s subtick system — master full-stop shots before spraying.',
+         'Utility stacking on executes wins rounds: a coordinated smoke + flash + molly into bombsite yields a 65%+ success rate.',
+         'AWP positioning has shifted — static holding is exploitable. Learn two positions per site and swap mid-round.',
+         'Grenade lineups on Mirage mid-to-B and Inferno banana are pick-rate requirements at any rank above Gold Nova.']},
+  'Rocket League':{games:[
+    {label:'Game 1',score:'4 – 2',note:'Win',cls:'win'},
+    {label:'Game 2',score:'1 – 3',note:'Loss',cls:'loss'},
+    {label:'Game 3',score:'2 – 2',note:'Draw',cls:'draw'},
+    {label:'Game 4',score:'5 – 1',note:'Win',cls:'win'},
+    {label:'Game 5',score:'3 – 4',note:'Loss',cls:'loss'}],
+   tips:['Aerial control and fast aerials are the primary skill separating Diamond from Champion — drill them daily.',
+         'Boost starvation is a decisive strategy: cut off enemy large boost pads to force desperation plays.',
+         'Rotation discipline wins more games than mechanical skill below GC — never chase, trust the rotation.',
+         'Ceiling shots and air dribbles are statistically unpredictable at Plat–Diamond — integrate one per session.']},
+  'Overwatch':{games:[
+    {label:'Game 1',score:'3 – 1',note:'Win',cls:'win'},
+    {label:'Game 2',score:'2 – 3',note:'Loss',cls:'loss'},
+    {label:'Game 3',score:'3 – 0',note:'Win',cls:'win'},
+    {label:'Game 4',score:'1 – 3',note:'Loss',cls:'loss'},
+    {label:'Game 5',score:'3 – 2',note:'Win',cls:'win'}],
+   tips:['Season 13 dive compositions with Tracer + Winston dominate ranked — they punish static bunker setups.',
+         'Support carry is real: Ana and Kiriko with aggressive nano/suzu timing swing teamfights more than DPS output.',
+         'Cooldown tracking is a top-5 skill — knowing enemy tank CDs determines when to contest or retreat.',
+         'High-ground control on Hybrid maps (King\'s Row, Blizzard World) is decisive in over 60% of pro-level rounds.']},
+  'Marvel Rivals':{games:[
+    {label:'Game 1',score:'3 – 1',note:'Win',cls:'win'},
+    {label:'Game 2',score:'1 – 3',note:'Loss',cls:'loss'},
+    {label:'Game 3',score:'3 – 2',note:'Win',cls:'win'},
+    {label:'Game 4',score:'2 – 3',note:'Loss',cls:'loss'},
+    {label:'Game 5',score:'3 – 0',note:'Win',cls:'win'}],
+   tips:['Aggressive flankers like Spider-Man and Black Panther dominate the current patch — they shred uncoordinated backlines.',
+         'Team-Up abilities are heavily underutilized below Diamond: coordinated combos deal up to 40% more burst damage.',
+         'Hulk\'s Gamma Surge combined with Iron Man air superiority is the highest win-rate pairing this season.',
+         'Healers with crowd-control (Mantis, Luna Snow) are more valuable than raw output — peel for your carries.']}
+};
+
+let currentGame=null;
+
+function renderGames(g){
+  currentGame=g;
+  document.getElementById('active-game-badge').textContent=g;
+  showMetaTips(g);
+}
+
+function showMetaTips(g){
+  const box=document.getElementById('meta-tips-box');
+  const list=document.getElementById('meta-tips-list');
+  const label=document.getElementById('meta-game-label');
+  box.classList.remove('visible');
+  list.innerHTML='';
+  label.textContent=g+' — this season';
+  const tips=gamesData[g].tips;
+  tips.forEach(t=>{
+    const d=document.createElement('div');
+    d.className='meta-tip';d.textContent=t;list.appendChild(d);
+  });
+  setTimeout(()=>{
+    box.classList.add('visible');
+    list.querySelectorAll('.meta-tip').forEach((el,i)=>setTimeout(()=>el.classList.add('show'),i*160+200));
+  },80);
+}
+
+function buildDropdown(){
+  const m=document.getElementById('dropdown-menu');m.innerHTML='';
+  Object.keys(gamesData).forEach(n=>{
+    const b=document.createElement('button');b.textContent=n;
+    if(n===currentGame)b.classList.add('selected');
+    b.onclick=()=>{renderGames(n);closeDropdown()};
+    m.appendChild(b);
+  });
+}
+function toggleDropdown(){const m=document.getElementById('dropdown-menu');if(m.style.display==='block')closeDropdown();else{buildDropdown();m.style.display='block'}}
+function closeDropdown(){document.getElementById('dropdown-menu').style.display='none'}
+document.addEventListener('click',e=>{if(!document.getElementById('game-dropdown').contains(e.target))closeDropdown()});
+
+/* ═══════════════ QUOTES (50+) ═══════════════ */
+const quotes=[
+  {text:'"Champions keep playing until they get it right."',tag:'MINDSET'},
+  {text:'"The will to win means nothing without the will to prepare."',tag:'PREPARATION'},
+  {text:'"Success is no accident. It is hard work, perseverance, learning, and sacrifice."',tag:'DISCIPLINE'},
+  {text:'"Talent wins games, but teamwork and intelligence win championships."',tag:'TEAMWORK'},
+  {text:'"You miss 100% of the shots you don\'t take."',tag:'ACTION'},
+  {text:'"Hard work beats talent when talent doesn\'t work hard."',tag:'GRIND'},
+  {text:'"The only way to prove you\'re a good sport is to lose."',tag:'CHARACTER'},
+  {text:'"Do not let what you cannot do interfere with what you can do."',tag:'FOCUS'},
+  {text:'"Pain is temporary. Quitting lasts forever."',tag:'RESILIENCE'},
+  {text:'"It\'s not whether you get knocked down, it\'s whether you get up."',tag:'GRIT'},
+  {text:'"Winning is not everything — but making the effort to win is."',tag:'EFFORT'},
+  {text:'"The difference between ordinary and extraordinary is that little extra."',tag:'EXCELLENCE'},
+  {text:'"A champion is defined not by their wins but by how they recover from losses."',tag:'RECOVERY'},
+  {text:'"You don\'t have to be great to start, but you have to start to be great."',tag:'BEGINNING'},
+  {text:'"Believe you can and you\'re halfway there."',tag:'BELIEF'},
+  {text:'"Never let success get to your head; never let failure get to your heart."',tag:'BALANCE'},
+  {text:'"The harder the battle, the sweeter the victory."',tag:'VICTORY'},
+  {text:'"Pressure is a privilege — it only comes to those who earn it."',tag:'PRESSURE'},
+  {text:'"Excellence is not a destination but a continuous journey."',tag:'JOURNEY'},
+  {text:'"To uncover your true potential you must first find your own limits."',tag:'GROWTH'},
+  {text:'"Push yourself because no one else is going to do it for you."',tag:'DRIVE'},
+  {text:'"Dream big. Work hard. Stay humble."',tag:'ETHOS'},
+  {text:'"Don\'t practice until you get it right. Practice until you can\'t get it wrong."',tag:'MASTERY'},
+  {text:'"An expert was once a beginner who refused to give up."',tag:'PERSISTENCE'},
+  {text:'"The mind is the athlete. The body is simply the means."',tag:'MENTAL'},
+  {text:'"Winners are not people who never fail, but people who never quit."',tag:'PERSISTENCE'},
+  {text:'"Set goals so big that you can\'t achieve them until you grow into the person who can."',tag:'VISION'},
+  {text:'"Confidence is preparation. Everything else is beyond your control."',tag:'CONTROL'},
+  {text:'"If you train hard, you\'ll not only be hard, you\'ll be hard to beat."',tag:'TRAINING'},
+  {text:'"Success is a choice — repeat it every day."',tag:'CHOICE'},
+  {text:'"Compete against yourself. It is the only competition that matters."',tag:'SELF'},
+  {text:'"Discipline is choosing between what you want now and what you want most."',tag:'DISCIPLINE'},
+  {text:'"The scoreboard is a lagging indicator of what happened in practice."',tag:'PROCESS'},
+  {text:'"Great players are willing to give up the good for the great."',tag:'SACRIFICE'},
+  {text:'"A calm mind is the sharpest weapon in any gamer\'s arsenal."',tag:'COMPOSURE'},
+  {text:'"Adaptability is the hallmark of the elite competitor."',tag:'ADAPTABILITY'},
+  {text:'"Skill is earned in silence. Reputation is built in public."',tag:'DEDICATION'},
+  {text:'"One percent better every day compounds into something extraordinary."',tag:'IMPROVEMENT'},
+  {text:'"Fatigue makes cowards of us all. Prepare your body like your mind."',tag:'ENDURANCE'},
+  {text:'"The best time to plant a tree was 20 years ago. The second best time is now."',tag:'ACTION'},
+  {text:'"Victory is in the preparation long before the first match is played."',tag:'PREPARATION'},
+  {text:'"Complacency is the enemy of progress. Never settle."',tag:'HUNGER'},
+  {text:'"Elite performance is 80% mental and 20% everything else."',tag:'MENTAL EDGE'},
+  {text:'"Your habits in training become your instincts in competition."',tag:'HABITS'},
+  {text:'"No one rises to low expectations."',tag:'STANDARDS'},
+  {text:'"Outwork everyone. The grind is the gift."',tag:'WORK ETHIC'},
+  {text:'"The lion does not lose sleep over the opinion of sheep."',tag:'FOCUS'},
+  {text:'"Consistency is what transforms average into awesome."',tag:'CONSISTENCY'},
+  {text:'"Pressure is not something to survive — it is something to harness."',tag:'PRESSURE'},
+  {text:'"If it doesn\'t challenge you, it doesn\'t change you."',tag:'GROWTH'},
+  {text:'"Your only limit is your mind."',tag:'MINDSET'},
+];
+let qi=0;
+function nextQuote(){
+  qi=(qi+1)%quotes.length;
+  document.getElementById('quote-text').textContent=quotes[qi].text;
+  document.getElementById('quote-tag').textContent=quotes[qi].tag;
+}
+
+let collapsed=false;
+function toggleOverview(){
+  collapsed=!collapsed;
+  document.getElementById('main-area').style.display=collapsed?'none':'flex';
+  document.getElementById('sidebar-area').style.display=collapsed?'none':'flex';
+  document.getElementById('collapse-label').textContent=collapsed?'Expand':'Collapse';
+}
+
+/* ═══════════════ PARTICLES ═══════════════ */
+const canvas=document.getElementById('particles-canvas');
+const ctx=canvas.getContext('2d');
+let particles=[];let animating=false;
+
+function spawnSparks(count){
+  for(let i=0;i<count;i++){
+    const side=Math.random()<.5?-1:1;
+    const angle=(Math.random()*Math.PI*.9)-(Math.PI*.45);
+    const speed=Math.random()*6+2;
+    particles.push({x:512,y:Math.random()*768,vx:Math.cos(angle)*speed*side+side*2,vy:(Math.random()-.5)*5,life:1,decay:Math.random()*.025+.012,size:Math.random()*2.5+.5,type:'spark',color:`hsl(${200+Math.random()*30},80%,${65+Math.random()*25}%)`});
+  }
+}
+function spawnDebris(count){
+  for(let i=0;i<count;i++){
+    const x=Math.random()<.5?Math.random()*512:512+Math.random()*512;
+    particles.push({x,y:Math.random()*300+80,vx:(Math.random()-.5)*3,vy:Math.random()*2+.5,rot:Math.random()*Math.PI*2,rotv:(Math.random()-.5)*.18,life:1,decay:Math.random()*.018+.008,w:Math.random()*11+3,h:Math.random()*7+2,type:'debris',color:`hsl(${200+Math.random()*30},20%,${40+Math.random()*25}%)`});
+  }
+}
+function tickParticles(){
+  ctx.clearRect(0,0,1024,768);
+  particles=particles.filter(p=>p.life>0);
+  particles.forEach(p=>{
+    p.life-=p.decay;p.x+=p.vx;p.y+=p.vy;
+    if(p.type==='spark'){p.vy+=.1;ctx.save();ctx.globalAlpha=p.life;ctx.fillStyle=p.color;ctx.shadowColor=p.color;ctx.shadowBlur=5;ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();ctx.restore()}
+    else{p.rot+=p.rotv;p.vy+=.07;ctx.save();ctx.globalAlpha=p.life*.75;ctx.translate(p.x,p.y);ctx.rotate(p.rot);ctx.fillStyle=p.color;ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);ctx.restore()}
+  });
+  if(animating||particles.length>0)requestAnimationFrame(tickParticles);
+  else ctx.clearRect(0,0,1024,768);
+}
+
+/* ═══════════════ HOLO SCAN ═══════════════ */
+function runHoloReveal(){
+  const scanEl=document.getElementById('holo-scan');
+  const sections=['topbar-overview','sec-hero','sec-quote','sec-focus'].map(id=>document.getElementById(id));
+  const sectionTops=[0,42,120,240];
+  const sbItems=document.querySelectorAll('#sidebar-area .sb-item');
+  scanEl.style.display='block';scanEl.style.top='0px';
+  let sIdx=0;
+  const start=performance.now();
+  function anim(now){
+    const frac=Math.min((now-start)/1500,1);
+    const y=frac*768;
+    scanEl.style.top=y+'px';
+    while(sIdx<sectionTops.length&&y>=sectionTops[sIdx]){
+      const el=sections[sIdx];
+      if(el){el.classList.add('reveal','revealed')}
+      sIdx++;
+    }
+    if(frac<1)requestAnimationFrame(anim);
+    else{
+      scanEl.style.display='none';
+      sbItems.forEach((el,i)=>setTimeout(()=>el.classList.add('revealed'),i*55));
+    }
+  }
+  requestAnimationFrame(anim);
+}
+
+/* ═══════════════ MAIN SEQUENCE ═══════════════ */
+const bootSteps=[
+  {status:'Initializing secure vault...',pct:0},
+  {status:'Calibrating biometric lock...',pct:20},
+  {status:'Loading tactical archives...',pct:44},
+  {status:'Pressurizing chamber seals...',pct:68},
+  {status:'Aligning vault tumblers...',pct:88},
+  {status:'Vault ready. Stand by.',pct:100},
+];
+function runBoot(){
+  const bs=document.getElementById('boot-screen');
+  const bstat=document.getElementById('boot-status');
+  const bbar=document.getElementById('boot-bar');
+  let si=0;
+  function step(){
+    if(si>=bootSteps.length){
+      setTimeout(()=>{bs.style.opacity='0';setTimeout(()=>{bs.style.display='none';startGates()},580)},500);
+      return;
+    }
+    bstat.textContent=bootSteps[si].status;bbar.style.width=bootSteps[si].pct+'%';
+    si++;setTimeout(step,si===1?800:480);
+  }
+  step();
+}
+
+function startGates(){
+  animating=true;requestAnimationFrame(tickParticles);
+  spawnSparks(50);spawnDebris(10);
+  setTimeout(()=>{
+    document.getElementById('gate-left').classList.add('open');
+    document.getElementById('gate-right').classList.add('open');
+    document.getElementById('app').classList.add('shaking');
+    setTimeout(()=>document.getElementById('app').classList.remove('shaking'),500);
+    let burst=0;
+    const bi=setInterval(()=>{spawnSparks(35);spawnDebris(8);burst++;if(burst>=5)clearInterval(bi)},220);
+  },300);
+  setTimeout(()=>{
+    animating=false;
+    document.getElementById('gate-wrap').style.display='none';
+    const dz=document.getElementById('dashboard-zoom');
+    dz.style.opacity='1';dz.style.transform='scale(1.08)';dz.style.transition='none';
+    dz.style.position='absolute';dz.style.inset='0';
+    setTimeout(()=>{
+      dz.style.transition='transform .85s cubic-bezier(.2,1,.3,1),opacity .6s ease';
+      dz.style.transform='scale(1)';
+      setTimeout(()=>{
+        transitioning = false;
+        maybeShowPrompt();
+      },750);
+    },30);
+  },2100);
+}
+/* ═══════════════ STORAGE UTILS ═══════════════ */
+
+function showToast(msg, color){
+  const t = document.getElementById('save-toast');
+  t.textContent = msg;
+  t.style.borderColor = color || 'var(--accent)';
+  t.style.color       = color || 'var(--accent)';
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(()=>t.classList.remove('show'), 2800);
+}
+
+/* Verify localStorage is writable */
+function storageAvailable(){
+  try{
+    const test = '__echelon_test__';
+    localStorage.setItem(test,'1');
+    localStorage.removeItem(test);
+    return true;
+  } catch(e){ return false; }
+}
+
+/* Count all saved echelon entries */
+function countEntries(){
+  let n = 0;
+  for(let i = 0; i < localStorage.length; i++){
+    if(localStorage.key(i).startsWith('echelon_')) n++;
+  }
+  return n;
+}
+
+function updateStorageStatus(){
+  const el = document.getElementById('cal-storage-status');
+  if(!el) return;
+  if(!storageAvailable()){
+    el.textContent = '⚠ Storage unavailable';
+    el.style.color = '#e84040';
+    return;
+  }
+  const n = countEntries();
+  el.textContent = `${n} day${n===1?'':'s'} saved locally`;
+  el.style.color = n > 0 ? '#22cc88' : 'var(--text2)';
+}
+
+/* Export all echelon data as a JSON backup file */
+function exportData(){
+  const out = {};
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(k.startsWith('echelon_')) out[k] = localStorage.getItem(k);
+  }
+  if(Object.keys(out).length === 0){
+    showToast('No data to export yet', '#e8a020');
+    return;
+  }
+  const blob = new Blob([JSON.stringify(out, null, 2)], {type:'application/json'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const date = new Date().toISOString().slice(0,10);
+  a.href     = url;
+  a.download = `echelon_backup_${date}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('✓ Backup downloaded');
+}
+
+/* Import a previously exported JSON backup */
+function importData(evt){
+  const file = evt.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    try{
+      const data = JSON.parse(e.target.result);
+      let count = 0;
+      Object.keys(data).forEach(k=>{
+        if(k.startsWith('echelon_')){
+          localStorage.setItem(k, data[k]);
+          count++;
+        }
+      });
+      renderCalendar();
+      updateCalendarScores();
+      updateStorageStatus();
+      showToast(`✓ ${count} day${count===1?'':'s'} restored`);
+    } catch(err){
+      showToast('✗ Invalid backup file', '#e84040');
+    }
+    evt.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
+/* ═══════════════ DAILY PROMPT ═══════════════ */
+let sleepHrs  = 7;
+let waterL    = 1.5;
+let exercised = true;
+
+function todayDateKey(){
+  const t = new Date();
+  return `echelon_${t.getFullYear()}_${t.getMonth()}_${t.getDate()}`;
+}
+
+function hasCheckedInToday(){
+  return !!localStorage.getItem(todayDateKey());
+}
+
+/* Called after vault opens */
+function maybeShowPrompt(){
+  transitioning = false;
+  if(hasCheckedInToday()){
+    /* Already done today — go straight to overview */
+    instantPage('page-overview');
+    setTimeout(()=>runHoloReveal(), 400);
+  } else {
+    /* First time today — show readiness check */
+    instantPage('page-prompt');
+  }
+}
+
+function adjustSleep(d){
+  sleepHrs = Math.max(0, Math.min(12, sleepHrs + d));
+  document.getElementById('sleep-display').textContent = sleepHrs + ' hrs';
+}
+function adjustWater(d){
+  waterL = Math.max(0, Math.min(6, Math.round((waterL + d) * 10) / 10));
+  document.getElementById('water-display').textContent = waterL.toFixed(1) + ' L';
+}
+function setExercise(val){
+  exercised = val;
+  document.getElementById('toggle-yes').classList.toggle('active',  val);
+  document.getElementById('toggle-no').classList.toggle('active', !val);
+}
+
+function calcScore(sleep, water, ex){
+  let sleepPts = 0;
+  if(sleep >= 8 && sleep <= 9)       sleepPts = 30;
+  else if(sleep === 7 || sleep === 10) sleepPts = 24;
+  else if(sleep === 6 || sleep === 11) sleepPts = 16;
+  else if(sleep === 5 || sleep === 12) sleepPts = 8;
+  else sleepPts = Math.max(0, sleep * 2);
+
+  let waterPts = Math.min(28, Math.round((water / 3.5) * 28));
+  waterPts = Math.max(0, waterPts);
+
+  const exPts = ex ? 15 : 0;
+  return { sleep: sleepPts, water: waterPts, ex: exPts, total: sleepPts + waterPts + exPts };
+}
+
+function submitPrompt(){
+  if(!storageAvailable()){
+    showToast('⚠ Storage unavailable — data not saved', '#e84040');
+    instantPage('page-overview');
+    setTimeout(()=>runHoloReveal(), 400);
+    return;
+  }
+  const score = calcScore(sleepHrs, waterL, exercised);
+  const entry = { sleep: sleepHrs, water: waterL, ex: exercised, score: score.total, breakdown: score };
+  localStorage.setItem(todayDateKey(), JSON.stringify(entry));
+  /* Verify it actually saved */
+  const verify = localStorage.getItem(todayDateKey());
+  if(verify){
+    showToast('✓ Readiness saved — ' + score.total + '/75 pts');
+  } else {
+    showToast('⚠ Save failed — storage may be full', '#e84040');
+  }
+  renderCalendar();
+  updateCalendarScores();
+  updateStorageStatus();
+  instantPage('page-overview');
+  setTimeout(()=>runHoloReveal(), 400);
+}
+
+/* ═══════════════ AUTO MONTH SYNC ═══════════════ */
+/* Keep calYear/calMonth in sync with the real date whenever the page is visible */
+let calYear  = new Date().getFullYear();
+let calMonth = new Date().getMonth();
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function syncCalendarToToday(){
+  const now = new Date();
+  calYear  = now.getFullYear();
+  calMonth = now.getMonth();
+}
+
+/* Check if the date has rolled over since last render and re-sync */
+let _lastRenderedDate = new Date().toDateString();
+function checkDateRollover(){
+  const nowStr = new Date().toDateString();
+  if(nowStr !== _lastRenderedDate){
+    _lastRenderedDate = nowStr;
+    syncCalendarToToday();
+    renderCalendar();
+    updateCalendarScores();
+    /* If app is open at midnight prompt hasn't been answered yet — next Enter click handles it */
+  }
+}
+/* Poll every minute for day rollover */
+setInterval(checkDateRollover, 60000);
+
+/* ═══════════════ PERSISTENCE HELPERS ═══════════════ */
+function getDayKey(y, m, d){ return `echelon_${y}_${m}_${d}`; }
+function getDayData(y, m, d){
+  const raw = localStorage.getItem(getDayKey(y, m, d));
+  return raw ? JSON.parse(raw) : null;
+}
+
+function scoreClass(s){
+  if(s === null || s === undefined) return '';
+  if(s >= 75) return 'score-green';
+  if(s >= 40) return 'score-yellow';
+  return 'score-red';
+}
+
+/* ═══════════════ CALENDAR RENDER ═══════════════ */
+function renderCalendar(){
+  document.getElementById('cal-month-label').textContent = MONTHS[calMonth] + ' ' + calYear;
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = '';
+  const today     = new Date();
+  const firstDay  = new Date(calYear, calMonth, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+
+  for(let i = 0; i < firstDay; i++){
+    const e = document.createElement('div');
+    e.className = 'cal-day empty';
+    grid.appendChild(e);
+  }
+
+  for(let d = 1; d <= daysInMonth; d++){
+    const cell = document.createElement('div');
+    cell.className = 'cal-day';
+
+    const isToday = (d === today.getDate() && calMonth === today.getMonth() && calYear === today.getFullYear());
+    if(isToday) cell.classList.add('today');
+
+    const data = getDayData(calYear, calMonth, d);
+    const dn   = document.createElement('div');
+    dn.className   = 'cal-dn';
+    dn.textContent = d;
+    cell.appendChild(dn);
+
+    if(data){
+      cell.classList.add('has-data', scoreClass(data.score));
+      const pip = document.createElement('div');
+      pip.className = 'cal-pip';
+      cell.appendChild(pip);
+
+      /* Tooltip rendered in a fixed-position layer to avoid clipping */
+      cell.addEventListener('mouseenter', function(e){
+        showCalTip(`Score: ${data.score}/75  |  💤 ${data.sleep}h  |  💧 ${data.water}L  |  🏃 ${data.ex?'Yes':'No'}`, e);
+      });
+      cell.addEventListener('mouseleave', hideCalTip);
+    }
+    grid.appendChild(cell);
+  }
+}
+
+/* ── Floating tooltip that is never clipped ── */
+(function buildFloatingTip(){
+  const tip = document.createElement('div');
+  tip.id = 'cal-float-tip';
+  tip.style.cssText = `
+    position:absolute;display:none;z-index:999;
+    background:#0a1520;border:1px solid #254560;border-radius:2px;
+    padding:6px 11px;font-size:9px;color:#c8dae8;letter-spacing:.06em;
+    font-family:'Orbitron',monospace;white-space:nowrap;
+    pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.6);
+  `;
+  document.getElementById('app').appendChild(tip);
+})();
+
+function showCalTip(text, evt){
+  const tip = document.getElementById('cal-float-tip');
+  tip.textContent = text;
+  tip.style.display = 'block';
+  posCalTip(evt);
+}
+function posCalTip(evt){
+  const tip  = document.getElementById('cal-float-tip');
+  const app  = document.getElementById('app');
+  const rect = app.getBoundingClientRect();
+  const mx   = evt.clientX - rect.left;
+  const my   = evt.clientY - rect.top;
+  const tw   = tip.offsetWidth;
+  const th   = tip.offsetHeight;
+  let tx = mx + 12;
+  let ty = my - th - 8;
+  if(tx + tw > 1024) tx = mx - tw - 12;
+  if(ty < 0)         ty = my + 14;
+  tip.style.left = tx + 'px';
+  tip.style.top  = ty + 'px';
+}
+document.getElementById('app').addEventListener('mousemove', function(e){
+  const tip = document.getElementById('cal-float-tip');
+  if(tip.style.display === 'block') posCalTip(e);
+});
+function hideCalTip(){
+  document.getElementById('cal-float-tip').style.display = 'none';
+}
+
+function updateCalendarScores(){
+  const today = new Date();
+
+  const todayData = getDayData(today.getFullYear(), today.getMonth(), today.getDate());
+  const todayEl   = document.getElementById('cal-today-score');
+  const todayBk   = document.getElementById('cal-today-breakdown');
+  const tc        = document.getElementById('cal-today-card');
+
+  if(todayData){
+    todayEl.textContent = todayData.score + '/75';
+    const b = todayData.breakdown;
+    todayBk.textContent = `Sleep ${b.sleep}/30 · Water ${b.water}/28 · Exercise ${b.ex}/15`;
+    const col = todayData.score >= 75 ? '#22cc66' : todayData.score >= 40 ? '#e8a020' : '#cc3333';
+    tc.style.borderTopColor = col;
+    todayEl.style.color = col;
+  } else {
+    todayEl.textContent       = '—';
+    todayBk.textContent       = 'No check-in yet today';
+    tc.style.borderTopColor   = 'var(--accent)';
+    todayEl.style.color       = 'var(--accent)';
+  }
+
+  let sum = 0, count = 0;
+  for(let i = 0; i < 7; i++){
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const data = getDayData(d.getFullYear(), d.getMonth(), d.getDate());
+    if(data){ sum += data.score; count++; }
+  }
+  const weekEl  = document.getElementById('cal-weekly-score');
+  const weekSub = document.getElementById('cal-weekly-sub');
+  const wc      = document.getElementById('cal-weekly-card');
+
+  if(count > 0){
+    const avg = Math.round(sum / count);
+    weekEl.textContent  = avg + '/75';
+    weekSub.textContent = `Based on ${count} of last 7 days`;
+    const col = avg >= 75 ? '#22cc66' : avg >= 40 ? '#e8a020' : '#cc3333';
+    weekEl.style.color      = col;
+    wc.style.borderTopColor = col;
+  } else {
+    weekEl.textContent      = '—';
+    weekSub.textContent     = 'No data this week';
+    wc.style.borderTopColor = 'var(--accent)';
+    weekEl.style.color      = 'var(--accent)';
+  }
+}
+
+function changeMonth(dir){
+  calMonth += dir;
+  if(calMonth > 11){ calMonth = 0; calYear++; }
+  if(calMonth < 0) { calMonth = 11; calYear--; }
+  renderCalendar();
+  updateStorageStatus();
+}
+
+/* Init */
+syncCalendarToToday();
+renderCalendar();
+updateCalendarScores();
+updateStorageStatus();
+
+setTimeout(runBoot, 300);
+</script>
+</body>
+</html>
